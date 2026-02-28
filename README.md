@@ -83,7 +83,7 @@ The protocol for physical algorithms. Receives the `faces` (memory) and executes
 ## 🌐 Live Demo
 
 We created a custom HTML demo to show the engine handling pure math rendering at 60 FPS:
-👉 **[View Interactive Demo on GitHub Pages](https://helron1977.github.io/triade-engine/)**
+👉 **[View Interactive Demo on GitHub Pages]([https://helron1977.github.io/triade-engine/](https://helron1977.github.io/Triade-Engine/))**
 
 ---
 
