@@ -3,7 +3,7 @@
   <h1>🌊 Triade Engine V2 🚀</h1>
   <p><strong>A GodMode O(1) Tensor-based Compute Engine for Web & Node.js</strong></p>
   
-  [![npm version](https://img.shields.io/npm/v/triade-engine.svg?style=flat-square)](https://www.npmjs.com/package/triade-engine)
+  [![npm version](https://img.shields.io/npm/v/hypercube-compute.svg?style=flat-square)](https://www.npmjs.com/package/hypercube-compute)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
   [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
 </div>
@@ -40,7 +40,7 @@ An open-world toric-bounded oceanic current simulator powered by the D2Q9 LBM En
 ## 📦 Installation
 
 ```bash
-npm install triade-engine
+npm install hypercube-compute
 ```
 
 **License**: MIT (Open Source, use it for anything!)
@@ -54,7 +54,7 @@ import {
     TriadeMasterBuffer, 
     TriadeGrid, 
     AerodynamicsEngine 
-} from 'triade-engine';
+} from 'hypercube-compute';
 
 // 1. Allocate a global shared memory buffer
 const master = new TriadeMasterBuffer();
