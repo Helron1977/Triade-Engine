@@ -18,7 +18,7 @@ export * from './io/WebGLAdapter';
 
 // Addons
 export * from './addons/ocean-simulation/OceanEngine';
-export * from './addons/ocean-simulation/OceanSimulatorAddon';
+export { OceanSimulatorAddon } from './addons/ocean-simulation/OceanSimulatorAddon';
 export * from './addons/ocean-simulation/OceanWebGLRenderer';
 export * from './addons/ocean-simulation/OceanWorld';
 
