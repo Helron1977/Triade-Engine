@@ -100,9 +100,17 @@ The soul of the engine. Acts as a memory allocator. Ask it for memory (`allocate
 
 ### `TriadeCubeV2`
 A compute unit. It represents a spatial block of logic. True to its name, it was designed with spatial structural integrity in mind:
-- **Up to 6 Faces**: A cube can have physical/logical sides.
+- **Up to 6 Faces**: A cube has theoretical physical/logical sides.
 - **Inter-Cube Connectivity**: Cubes can be linked together! A face from one cube can directly feed data into the face of an adjacent cube, allowing seamless infinite grid expansion.
 - **Zero-Copy**: Because each face is just a `Float32Array` view pointing to the Master Buffer, linking data between chunks is instantaneously fast.
+
+**The Philosophy of Faces (Example)**:
+Instead of storing `{ temperature: 20, windX: 5 }` in an object per cell, we use the Cube's faces as overlapping dimensional layers of the exact same space.
+- *Face 0* could strictly hold the **Heatmap/Temperature** of the chunk.
+- *Face 1* could strictly hold the **Velocity X (Wind)**.
+- *Face 2* could strictly hold the **Obstacle/Wall Mask**.
+
+When computing, the `ITriadeEngine` naturally reads these independent mathematical vectors, mixes them, and writes the result to a new Face, avoiding any Object-Oriented memory bloat.
 
 ### `ITriadeEngine`
 The protocol for physical algorithms. Receives the `faces` (memory pointers) and executes the logic. Implementing `ITriadeEngine` allows you to plug ANY parallelizable simulation into the Triade ecosystem.
