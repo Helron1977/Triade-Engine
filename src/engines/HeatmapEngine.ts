@@ -51,10 +51,91 @@ export class HeatmapEngine implements ITriadeEngine {
                 const C = (minX > 0) ? face5[maxY * mapSize + (minX - 1)] : 0;
                 const D = face5[maxY * mapSize + maxX];
 
-                // Différence des coins
                 const sum = D - B - C + A;
                 face3[y * mapSize + x] = sum * this.weight;
             }
         }
+    }
+
+    /**
+     * @WebGPU
+     * Code WGSL statique pour décharger le Box Filter SAT O(N) sur le GPU.
+     * Binding 0: Face 2 (Input Binary Map)
+     * Binding 1: Face 5 (SAT Buffer Intermédiaire)
+     * Binding 2: Face 3 (Output Diffusion)
+     * Binding 3: Config Uniforms (mapSize, radius, weight)
+     */
+    get wgslSource(): string {
+        return `
+            struct Uniforms {
+                mapSize: u32,
+                radius: i32,
+                weight: f32,
+            };
+
+            @group(0) @binding(0) var<storage, read> in_map: array<f32>;
+            @group(0) @binding(1) var<storage, read_write> sat_map: array<f32>;
+            @group(0) @binding(2) var<storage, write> out_diffusion: array<f32>;
+            @group(0) @binding(3) var<uniform> config: Uniforms;
+
+            // --- PASS 1: Prefix Sum Horizontal (Lignes) ---
+            @compute @workgroup_size(256)
+            fn compute_sat_horizontal(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let y = global_id.y;
+                if (y >= config.mapSize) { return; }
+
+                // Chaque thread gère une ligne entière (optimisation naive temporaire. FIXME: Parallel Prefix Sum)
+                var current_sum: f32 = 0.0;
+                for (var x: u32 = 0u; x < config.mapSize; x++) {
+                    let idx = y * config.mapSize + x;
+                    current_sum += in_map[idx];
+                    sat_map[idx] = current_sum;
+                }
+            }
+
+            // --- PASS 2: Prefix Sum Vertical (Colonnes) ---
+            @compute @workgroup_size(256)
+            fn compute_sat_vertical(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let x = global_id.x;
+                if (x >= config.mapSize) { return; }
+
+                // Chaque thread gère une colonne entière
+                var current_sum: f32 = 0.0;
+                for (var y: u32 = 0u; y < config.mapSize; y++) {
+                    let idx = y * config.mapSize + x;
+                    current_sum += sat_map[idx];
+                    sat_map[idx] = current_sum;
+                }
+            }
+
+            // --- PASS 3: Extraction Box Filter (Diffusion) ---
+            @compute @workgroup_size(16, 16)
+            fn compute_diffusion(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let x = i32(global_id.x);
+                let y = i32(global_id.y);
+                let mapSize = i32(config.mapSize);
+
+                if (x >= mapSize || y >= mapSize) { return; }
+
+                let min_x = max(0, x - config.radius);
+                let min_y = max(0, y - config.radius);
+                let max_x = min(mapSize - 1, x + config.radius);
+                let max_y = min(mapSize - 1, y + config.radius);
+
+                // Opcodes O(1)
+                var A: f32 = 0.0;
+                var B: f32 = 0.0;
+                var C: f32 = 0.0;
+                
+                if (min_x > 0 && min_y > 0) { A = sat_map[u32((min_y - 1) * mapSize + (min_x - 1))]; }
+                if (min_y > 0) { B = sat_map[u32((min_y - 1) * mapSize + max_x)]; }
+                if (min_x > 0) { C = sat_map[u32(max_y * mapSize + (min_x - 1))]; }
+                
+                let D: f32 = sat_map[u32(max_y * mapSize + max_x)];
+
+                let sum = D - B - C + A;
+                out_diffusion[u32(y * mapSize + x)] = sum * config.weight;
+            }
+        `;
     }
 }
