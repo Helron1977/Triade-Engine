@@ -13,6 +13,11 @@ export class TriadeGrid {
     public readonly rows: number;
     public readonly cubeSize: number;
     public isPeriodic: boolean;
+    public readonly mode: 'cpu' | 'webgpu';
+
+    private _engineFactory: () => ITriadeEngine;
+
+    // TODO(WebGPU V3): Pipeline layout and buffers references
 
     constructor(
         cols: number,
@@ -21,12 +26,15 @@ export class TriadeGrid {
         masterBuffer: TriadeMasterBuffer,
         engineFactory: () => ITriadeEngine,
         numFaces: number = 6,
-        isPeriodic: boolean = true
+        isPeriodic: boolean = true,
+        mode: 'cpu' | 'webgpu' = 'cpu'
     ) {
         this.cols = cols;
         this.rows = rows;
         this.cubeSize = cubeSize;
         this.isPeriodic = isPeriodic;
+        this.mode = mode;
+        this._engineFactory = engineFactory;
 
         // Allocation de la grille de cubes
         for (let y = 0; y < rows; y++) {
@@ -40,12 +48,49 @@ export class TriadeGrid {
     }
 
     /**
+     * Initialise asynchroniquement une grille. Obligatoire si le mode WebGPU est sélectionné
+     * afin de préparer les Storage Buffers et de compiler le WGSL via TriadeGPUContext.
+     */
+    static async create(
+        cols: number,
+        rows: number,
+        cubeSize: number,
+        masterBuffer: TriadeMasterBuffer,
+        engineFactory: () => ITriadeEngine,
+        numFaces: number = 6,
+        isPeriodic: boolean = true,
+        mode: 'cpu' | 'webgpu' = 'cpu'
+    ): Promise<TriadeGrid> {
+
+        if (mode === 'webgpu') {
+            // Check runtime WebGPU definition in case the user forgets to import Context
+            const TriadeGPUContext = (await import('./gpu/TriadeGPUContext')).TriadeGPUContext;
+            const success = await TriadeGPUContext.init();
+            if (!success) {
+                console.warn("[TriadeGrid] WebGPU init n'a pas réussi. Fallback implicite vers le mode 'cpu'.");
+                mode = 'cpu';
+            } else {
+                console.info("[TriadeGrid] Initialisation asynchrone du contexte WebGPU : Succès.");
+                // TODO(WebGPU V3): Here we will compile the compute shader from `engineFactory().wgslSource`
+            }
+        }
+
+        return new TriadeGrid(cols, rows, cubeSize, masterBuffer, engineFactory, numFaces, isPeriodic, mode);
+    }
+
+    /**
      * Calcule une étape complète de la grille.
-     * 1. Exécute "compute()" sur chaque cube
+     * 1. Exécute "compute()" sur chaque cube (CPU) ou déclenche le Compute Shader (GPU)
      * 2. Synchronise les bords (Boundary Exchange) sur les faces demandées
      */
     compute(facesToSynchronize: number | number[] = 0) {
-        // 1. Calcul (Intra-Cube)
+        if (this.mode === 'webgpu') {
+            // TODO(WebGPU V3): Dispatch Workgroups & Compute Shader Execution
+            console.warn("[TriadeGrid] compute() - Mode WebGPU pas encore totalement implémenté ! Exécution ignorée.");
+            return;
+        }
+
+        // 1. Calcul (Intra-Cube) - Mode CPU
         for (let y = 0; y < this.rows; y++) {
             for (let x = 0; x < this.cols; x++) {
                 this.cubes[y][x]?.compute();

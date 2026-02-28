@@ -26,4 +26,11 @@ export interface ITriadeEngine {
      * @AI_RULE This MUST match the semantic context of the Engine (e.g., 'Navier-Stokes-LBM-D2Q9', 'Game-Of-Life').
      */
     get name(): string;
+
+    /**
+     * Code source WGSL (Compute Shader) optionnel pour l'exécution sur GPU.
+     * Si fourni, TriadeGrid l'utilisera en mode WebGPU (Accélération Matérielle).
+     * @AI_RULE Le shader doit utiliser des Storage Buffers pour lire/écrire les faces.
+     */
+    readonly wgslSource?: string;
 }
