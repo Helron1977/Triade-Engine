@@ -61,7 +61,6 @@ export class TriadeGrid {
         isPeriodic: boolean = true,
         mode: 'cpu' | 'webgpu' = 'cpu'
     ): Promise<TriadeGrid> {
-
         if (mode === 'webgpu') {
             // Check runtime WebGPU definition in case the user forgets to import Context
             const TriadeGPUContext = (await import('./gpu/TriadeGPUContext')).TriadeGPUContext;
@@ -71,11 +70,21 @@ export class TriadeGrid {
                 mode = 'cpu';
             } else {
                 console.info("[TriadeGrid] Initialisation asynchrone du contexte WebGPU : Succès.");
-                // TODO(WebGPU V3): Here we will compile the compute shader from `engineFactory().wgslSource`
             }
         }
 
-        return new TriadeGrid(cols, rows, cubeSize, masterBuffer, engineFactory, numFaces, isPeriodic, mode);
+        const grid = new TriadeGrid(cols, rows, cubeSize, masterBuffer, engineFactory, numFaces, isPeriodic, mode);
+
+        // Initialiser la VRAM de tous les cubes
+        if (mode === 'webgpu') {
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    grid.cubes[y][x]?.initGPU();
+                }
+            }
+        }
+
+        return grid;
     }
 
     /**
@@ -83,10 +92,23 @@ export class TriadeGrid {
      * 1. Exécute "compute()" sur chaque cube (CPU) ou déclenche le Compute Shader (GPU)
      * 2. Synchronise les bords (Boundary Exchange) sur les faces demandées
      */
-    compute(facesToSynchronize: number | number[] = 0) {
+    async compute(facesToSynchronize: number | number[] = 0) {
         if (this.mode === 'webgpu') {
-            // TODO(WebGPU V3): Dispatch Workgroups & Compute Shader Execution
-            console.warn("[TriadeGrid] compute() - Mode WebGPU pas encore totalement implémenté ! Exécution ignorée.");
+            const TriadeGPUContext = (await import('./gpu/TriadeGPUContext')).TriadeGPUContext;
+            const commandEncoder = TriadeGPUContext.device.createCommandEncoder();
+
+            for (let y = 0; y < this.rows; y++) {
+                for (let x = 0; x < this.cols; x++) {
+                    const cube = this.cubes[y][x];
+                    if (cube && cube.engine && cube.engine.computeGPU) {
+                        const passEncoder = commandEncoder.beginComputePass();
+                        cube.engine.computeGPU(passEncoder, cube.mapSize);
+                        passEncoder.end();
+                    }
+                }
+            }
+
+            TriadeGPUContext.device.queue.submit([commandEncoder.finish()]);
             return;
         }
 

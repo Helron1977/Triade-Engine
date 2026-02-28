@@ -5,6 +5,11 @@ export class HeatmapEngine implements ITriadeEngine {
     public radius: number;
     public weight: number;
 
+    private pipelineHorizontal: GPUComputePipeline | null = null;
+    private pipelineVertical: GPUComputePipeline | null = null;
+    private pipelineDiffusion: GPUComputePipeline | null = null;
+    private bindGroup: GPUBindGroup | null = null;
+
     /**
      * @param radius Rayon d'influence en cellules
      * @param weight Coefficient multiplicateur à l'arrivée
@@ -12,6 +17,75 @@ export class HeatmapEngine implements ITriadeEngine {
     constructor(radius: number = 10, weight: number = 1.0) {
         this.radius = radius;
         this.weight = weight;
+    }
+
+    /**
+     * Initialisation spécifique au GPU. Compile les shaders et prépare le layout.
+     */
+    initGPU(device: GPUDevice, facesBuffers: GPUBuffer[], mapSize: number): void {
+        const wgsl = this.wgslSource;
+        const shaderModule = device.createShaderModule({ code: wgsl });
+
+        this.pipelineHorizontal = device.createComputePipeline({
+            layout: 'auto', compute: { module: shaderModule, entryPoint: 'compute_sat_horizontal' }
+        });
+        this.pipelineVertical = device.createComputePipeline({
+            layout: 'auto', compute: { module: shaderModule, entryPoint: 'compute_sat_vertical' }
+        });
+        this.pipelineDiffusion = device.createComputePipeline({
+            layout: 'auto', compute: { module: shaderModule, entryPoint: 'compute_diffusion' }
+        });
+
+        // Configuration des Uniforms (mapSize, radius, weight) alignée sur 16 bytes.
+        const uniformBuffer = device.createBuffer({
+            size: 16,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        // MapSize (u32, offset 0)
+        device.queue.writeBuffer(uniformBuffer, 0, new Uint32Array([mapSize]));
+        // Radius (i32, offset 4)
+        device.queue.writeBuffer(uniformBuffer, 4, new Int32Array([this.radius]));
+        // Weight (f32, offset 8)
+        device.queue.writeBuffer(uniformBuffer, 8, new Float32Array([this.weight]));
+
+        // Le Layout déduit par WebGPU (layout: 'auto') de la première passe suffit.
+        this.bindGroup = device.createBindGroup({
+            layout: this.pipelineHorizontal.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: facesBuffers[1] } }, // Face 2 (Input Binary Map)
+                { binding: 1, resource: { buffer: facesBuffers[4] } }, // Face 5 (SAT)
+                { binding: 2, resource: { buffer: facesBuffers[2] } }, // Face 3 (Diffusion Synthèse)
+                { binding: 3, resource: { buffer: uniformBuffer } }
+            ]
+        });
+    }
+
+    /**
+     * Dispatch GPU des différents Compute Shaders.
+     */
+    computeGPU(passEncoder: GPUComputePassEncoder, mapSize: number): void {
+        if (!this.bindGroup) return;
+
+        passEncoder.setBindGroup(0, this.bindGroup);
+
+        // PASS 1: Prefix Sum Horizontal (Lignes gérées par thread)
+        if (this.pipelineHorizontal) {
+            passEncoder.setPipeline(this.pipelineHorizontal);
+            passEncoder.dispatchWorkgroups(Math.ceil(mapSize / 256));
+        }
+
+        // PASS 2: Prefix Sum Vertical (Colonnes gérées par thread)
+        if (this.pipelineVertical) {
+            passEncoder.setPipeline(this.pipelineVertical);
+            passEncoder.dispatchWorkgroups(Math.ceil(mapSize / 256));
+        }
+
+        // PASS 3: Extraction Box Filter (Diffusion 2D)
+        if (this.pipelineDiffusion) {
+            passEncoder.setPipeline(this.pipelineDiffusion);
+            passEncoder.dispatchWorkgroups(Math.ceil(mapSize / 16), Math.ceil(mapSize / 16));
+        }
     }
 
     /**
