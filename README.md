@@ -80,28 +80,29 @@ const curlArray = firstCube.faces[21]; // => Float32Array[]
 
 ```mermaid
 graph TD
-    A[TriadeMasterBuffer<br>Single Flat 1D Array] -->|Partitions| B(TriadeGrid<br>Handles Chunk Management)
-    B --> C1[TriadeCubeV2<br>Chunk 0,0]
-    B --> C2[TriadeCubeV2<br>Chunk 0,1]
+    A[TriadeMasterBuffer<br>Raw ArrayBuffer] -->|Partitions| B(TriadeGrid)
     
-    C1 -->|Slices| F1[Face 0: Float32Array]
-    C1 -->|Slices| F2[Face 1: Float32Array]
-    C1 -->|Slices| F3[Face N: Float32Array]
+    B --> C1[TriadeCubeV2<br>Chunk A]
+    B --> C2[TriadeCubeV2<br>Chunk B]
+    
+    C1 <-->|Face-to-Face Data Link| C2
+    
+    C1 -->|Holds| F1[Face 0: Float32Array]
+    C1 -->|Holds| F2[Face 1: Float32Array]
+    C1 -->|Holds| F3[Face N: Float32Array]
     
     F1 -.->|Pointers Pass to| E[ITriadeEngine<br>Physics Logic]
     F2 -.->|Pointers Pass to| E
-    
-    E -->|Writes result to| F3
 ```
 
 ### `TriadeMasterBuffer`
-The soul of the engine. Acts as a memory allocator. Ask it for memory (`allocateFloat32`), and it partitions an underlying flat `ArrayBuffer` efficiently.
+The soul of the engine. Acts as a memory allocator. Ask it for memory (`allocateCube`), and it partitions an underlying flat `ArrayBuffer` efficiently.
 
 ### `TriadeCubeV2`
-A compute unit. Represents an Space of $N \times N$ spatial data. It holds exactly $F$ "faces" (layers). Each face is a sub-view of the Master Buffer.
-- Face 0 could be "Temperature"
-- Face 1 could be "Water Velocity X"
-- Face 2 could be "Obstacle Mask"... 
+A compute unit. It represents a spatial block of logic. True to its name, it was designed with spatial structural integrity in mind:
+- **Up to 6 Faces**: A cube can have physical/logical sides.
+- **Inter-Cube Connectivity**: Cubes can be linked together! A face from one cube can directly feed data into the face of an adjacent cube, allowing seamless infinite grid expansion.
+- **Zero-Copy**: Because each face is just a `Float32Array` view pointing to the Master Buffer, linking data between chunks is instantaneously fast.
 
 ### `ITriadeEngine`
 The protocol for physical algorithms. Receives the `faces` (memory pointers) and executes the logic. Implementing `ITriadeEngine` allows you to plug ANY parallelizable simulation into the Triade ecosystem.
