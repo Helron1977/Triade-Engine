@@ -1,6 +1,6 @@
-import { TriadeMasterBuffer, TriadeGrid, AerodynamicsEngine } from 'triade-engine';
+import { HypercubeMasterBuffer, HypercubeGrid, AerodynamicsEngine } from 'Hypercube-engine';
 
-const canvas = document.getElementById('triade-canvas') as HTMLCanvasElement;
+const canvas = document.getElementById('Hypercube-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 
 // 4 chunks to keep it fast but demo the "chunking" concept
@@ -11,10 +11,10 @@ const GLOBAL_SIZE_W = COLS * CHUNK_SIZE; // 128
 const GLOBAL_SIZE_H = ROWS * CHUNK_SIZE; // 128
 
 // 1. Allocate buffer (22 faces required for LBM Aerodynamics D2Q9)
-const master = new TriadeMasterBuffer();
+const master = new HypercubeMasterBuffer();
 
 // 2. Create continuous Toric boundary grid (true)
-const grid = new TriadeGrid(COLS, ROWS, CHUNK_SIZE, master, () => new AerodynamicsEngine(), 22, true);
+const grid = new HypercubeGrid(COLS, ROWS, CHUNK_SIZE, master, () => new AerodynamicsEngine(), 22, true);
 
 // 3. Setup central circular obstacle
 const cx = GLOBAL_SIZE_W / 2;
@@ -151,3 +151,39 @@ function tick() {
 
 // Start
 tick();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

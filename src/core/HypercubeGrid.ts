@@ -1,31 +1,31 @@
-import { TriadeMasterBuffer } from './TriadeMasterBuffer';
-import { TriadeCubeV2 } from './TriadeCubeV2';
-import type { ITriadeEngine } from '../engines/ITriadeEngine';
-import { TriadeWorkerPool } from './cpu/TriadeWorkerPool';
+import { HypercubeMasterBuffer } from './HypercubeMasterBuffer';
+import { HypercubeChunk } from './HypercubeChunk';
+import type { IHypercubeEngine } from '../engines/IHypercubeEngine';
+import { HypercubeWorkerPool } from './cpu/HypercubeWorkerPool';
 
 /**
- * TriadeGrid gère un assemblage N x M de TriadeCubes adjacents.
+ * HypercubeGrid gère un assemblage N x M de TriadeCubes adjacents.
  * Il assure la communication "Boundary Exchange" (Ghost Cells) entre les cubes
  * à la fin de chaque étape de calcul pour unifier la simulation.
  */
-export class TriadeGrid {
-    public cubes: (TriadeCubeV2 | null)[][] = [];
+export class HypercubeGrid {
+    public cubes: (HypercubeChunk | null)[][] = [];
     public readonly cols: number;
     public readonly rows: number;
     public readonly cubeSize: number;
     public isPeriodic: boolean;
     public readonly mode: 'cpu' | 'webgpu';
-    public masterBuffer: TriadeMasterBuffer;
+    public masterBuffer: HypercubeMasterBuffer;
 
-    private _engineFactory: () => ITriadeEngine;
-    private workerPool: TriadeWorkerPool | null = null;
+    private _engineFactory: () => IHypercubeEngine;
+    private workerPool: HypercubeWorkerPool | null = null;
 
     constructor(
         cols: number,
         rows: number,
         cubeSize: number,
-        masterBuffer: TriadeMasterBuffer,
-        engineFactory: () => ITriadeEngine,
+        masterBuffer: HypercubeMasterBuffer,
+        engineFactory: () => IHypercubeEngine,
         numFaces: number = 6,
         isPeriodic: boolean = true,
         mode: 'cpu' | 'webgpu' = 'cpu'
@@ -38,12 +38,17 @@ export class TriadeGrid {
         this.mode = mode;
         this._engineFactory = engineFactory;
 
+        // Détection automatique du nombre de faces via l'engine (Step 10 Roadmap)
+        const tempEngine = engineFactory();
+        const requiredFaces = tempEngine.getRequiredFaces();
+        const finalNumFaces = Math.max(numFaces, requiredFaces);
+
         // Allocation de la grille de cubes
         for (let y = 0; y < rows; y++) {
             this.cubes[y] = [];
             for (let x = 0; x < cols; x++) {
-                const cube = new TriadeCubeV2(cubeSize, masterBuffer, numFaces);
-                cube.setEngine(engineFactory());
+                const cube = new HypercubeChunk(cubeSize, masterBuffer, finalNumFaces);
+                cube.setEngine(y === 0 && x === 0 ? tempEngine : engineFactory());
                 this.cubes[y][x] = cube;
             }
         }
@@ -51,32 +56,32 @@ export class TriadeGrid {
 
     /**
      * Initialise asynchroniquement une grille. Obligatoire si le mode WebGPU est sélectionné
-     * afin de préparer les Storage Buffers et de compiler le WGSL via TriadeGPUContext.
+     * afin de préparer les Storage Buffers et de compiler le WGSL via HypercubeGPUContext.
      */
     static async create(
         cols: number,
         rows: number,
         cubeSize: number,
-        masterBuffer: TriadeMasterBuffer,
-        engineFactory: () => ITriadeEngine,
+        masterBuffer: HypercubeMasterBuffer,
+        engineFactory: () => IHypercubeEngine,
         numFaces: number = 6,
         isPeriodic: boolean = true,
         mode: 'cpu' | 'webgpu' = 'cpu',
         useWorkers: boolean = true
-    ): Promise<TriadeGrid> {
+    ): Promise<HypercubeGrid> {
         if (mode === 'webgpu') {
             // Check runtime WebGPU definition in case the user forgets to import Context
-            const TriadeGPUContext = (await import('./gpu/TriadeGPUContext')).TriadeGPUContext;
-            const success = await TriadeGPUContext.init();
+            const HypercubeGPUContext = (await import('./gpu/HypercubeGPUContext')).HypercubeGPUContext;
+            const success = await HypercubeGPUContext.init();
             if (!success) {
-                console.warn("[TriadeGrid] WebGPU init n'a pas réussi. Fallback implicite vers le mode 'cpu'.");
+                console.warn("[HypercubeGrid] WebGPU init n'a pas réussi. Fallback implicite vers le mode 'cpu'.");
                 mode = 'cpu';
             } else {
-                console.info("[TriadeGrid] Initialisation asynchrone du contexte WebGPU : Succès.");
+                console.info("[HypercubeGrid] Initialisation asynchrone du contexte WebGPU : Succès.");
             }
         }
 
-        const grid = new TriadeGrid(cols, rows, cubeSize, masterBuffer, engineFactory, numFaces, isPeriodic, mode);
+        const grid = new HypercubeGrid(cols, rows, cubeSize, masterBuffer, engineFactory, numFaces, isPeriodic, mode);
 
         // Initialiser la VRAM de tous les cubes
         if (mode === 'webgpu') {
@@ -87,14 +92,14 @@ export class TriadeGrid {
             }
         } else if (mode === 'cpu' && useWorkers && typeof SharedArrayBuffer !== 'undefined' && masterBuffer.buffer instanceof SharedArrayBuffer) {
             // Activer l'accélération multicore logicielle
-            grid.workerPool = new TriadeWorkerPool();
+            grid.workerPool = new HypercubeWorkerPool();
             try {
                 // Tenter de charger le worker via Vite/Tsup si la compilation exporte le Worker externe
                 // Note : il faudra configurer Tsup pour compiler cpu.worker.ts séparément
                 await grid.workerPool.init();
-                console.info(`[TriadeGrid] WorkerPool CPU instanciée avec succès (Zero-Copy prêt).`);
+                console.info(`[HypercubeGrid] WorkerPool CPU instanciée avec succès (Zero-Copy prêt).`);
             } catch (error) {
-                console.warn("[TriadeGrid] Échec de l'initialisation de la WorkerPool.", error);
+                console.warn("[HypercubeGrid] Échec de l'initialisation de la WorkerPool.", error);
                 grid.workerPool = null;
             }
         }
@@ -109,8 +114,8 @@ export class TriadeGrid {
      */
     async compute(facesToSynchronize: number | number[] = 0) {
         if (this.mode === 'webgpu') {
-            const TriadeGPUContext = (await import('./gpu/TriadeGPUContext')).TriadeGPUContext;
-            const commandEncoder = TriadeGPUContext.device.createCommandEncoder();
+            const HypercubeGPUContext = (await import('./gpu/HypercubeGPUContext')).HypercubeGPUContext;
+            const commandEncoder = HypercubeGPUContext.device.createCommandEncoder();
 
             for (let y = 0; y < this.rows; y++) {
                 for (let x = 0; x < this.cols; x++) {
@@ -123,14 +128,14 @@ export class TriadeGrid {
                 }
             }
 
-            TriadeGPUContext.device.queue.submit([commandEncoder.finish()]);
+            HypercubeGPUContext.device.queue.submit([commandEncoder.finish()]);
             // On pourras remonter les faces en RAM ici avec un async map si l'engine doit afficher
             return;
         }
 
         // 1. Calcul (Intra-Cube) - Mode CPU Multithread (Workers + SharedMemory)
         if (this.workerPool && this.masterBuffer.buffer instanceof SharedArrayBuffer) {
-            const flatCubes = this.cubes.flat().filter(c => c !== null) as TriadeCubeV2[];
+            const flatCubes = this.cubes.flat().filter(c => c !== null) as HypercubeChunk[];
 
             // Note: On assume que l'engine du premier cube est représentatif
             const engineName = flatCubes[0]?.engine?.name || 'Unknown';
@@ -145,12 +150,15 @@ export class TriadeGrid {
         else {
             for (let y = 0; y < this.rows; y++) {
                 for (let x = 0; x < this.cols; x++) {
-                    this.cubes[y][x]?.compute();
+                    await this.cubes[y][x]?.compute();
                 }
             }
         }
 
         // 2. Synchronisation des bords O(1) Data Copy
+        // S'il n'y a qu'un seul cube, la synchronisation est inutile (et risquerait d'écraser des données sur lui-même)
+        if (this.cols === 1 && this.rows === 1) return;
+
         const faces = Array.isArray(facesToSynchronize) ? facesToSynchronize : [facesToSynchronize];
         for (const f of faces) {
             this.synchronizeBoundaries(f);
@@ -215,3 +223,39 @@ export class TriadeGrid {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

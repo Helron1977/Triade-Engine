@@ -1,5 +1,5 @@
-import { TriadeMasterBuffer } from '../../core/TriadeMasterBuffer';
-import { TriadeCubeV2 } from '../../core/TriadeCubeV2';
+import { HypercubeMasterBuffer } from '../../core/HypercubeMasterBuffer';
+import { HypercubeChunk } from '../../core/HypercubeChunk';
 import { OceanEngine } from './OceanEngine';
 
 export interface Boat {
@@ -13,8 +13,8 @@ export interface Boat {
 
 export class OceanSimulatorAddon {
     public readonly size: number;
-    private master: TriadeMasterBuffer;
-    private cube: TriadeCubeV2;
+    private master: HypercubeMasterBuffer;
+    private cube: HypercubeChunk;
     private engine: OceanEngine;
 
     public boats: Boat[] = [];
@@ -22,9 +22,9 @@ export class OceanSimulatorAddon {
     constructor(size: number = 256) {
         this.size = size;
 
-        // 1. Initialize Triade Memory System (24 faces for LBM + Bio + Temp)
-        this.master = new TriadeMasterBuffer();
-        this.cube = new TriadeCubeV2(size, this.master, 24);
+        // 1. Initialize Hypercube Memory System (24 faces for LBM + Bio + Temp)
+        this.master = new HypercubeMasterBuffer();
+        this.cube = new HypercubeChunk(size, this.master, 24);
 
         // 2. Initialize Engine
         this.engine = new OceanEngine();
@@ -54,7 +54,7 @@ export class OceanSimulatorAddon {
      * Global Step: Fluid -> Bio -> Boats
      */
     step(): void {
-        // Run Triade Math Engine
+        // Run Hypercube Math Engine
         this.cube.compute();
 
         // Run Boat Physics
@@ -143,3 +143,39 @@ export class OceanSimulatorAddon {
         return this.cube.faces;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

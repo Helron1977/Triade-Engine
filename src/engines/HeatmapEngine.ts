@@ -1,7 +1,13 @@
-import type { ITriadeEngine } from './ITriadeEngine';
+import type { IHypercubeEngine } from './IHypercubeEngine';
 
-export class HeatmapEngine implements ITriadeEngine {
-    public readonly name = "Heatmap (O1 Spatial Convolution)";
+export class HeatmapEngine implements IHypercubeEngine {
+    public get name(): string {
+        return "Heatmap (O1 Spatial Convolution)";
+    }
+
+    public getRequiredFaces(): number {
+        return 6;
+    }
     public radius: number;
     public weight: number;
 
@@ -22,41 +28,57 @@ export class HeatmapEngine implements ITriadeEngine {
     /**
      * Initialisation spécifique au GPU. Compile les shaders et prépare le layout.
      */
-    initGPU(device: GPUDevice, facesBuffers: GPUBuffer[], mapSize: number): void {
-        const wgsl = this.wgslSource;
-        const shaderModule = device.createShaderModule({ code: wgsl });
+    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, mapSize: number): void {
+        const shaderModule = device.createShaderModule({ code: this.wgslSource });
+
+        const bindGroupLayout = device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: 'storage' }
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: 'uniform' }
+                }
+            ]
+        });
+
+        const pipelineLayout = device.createPipelineLayout({
+            bindGroupLayouts: [bindGroupLayout]
+        });
 
         this.pipelineHorizontal = device.createComputePipeline({
-            layout: 'auto', compute: { module: shaderModule, entryPoint: 'compute_sat_horizontal' }
+            layout: pipelineLayout, compute: { module: shaderModule, entryPoint: 'compute_sat_horizontal' }
         });
         this.pipelineVertical = device.createComputePipeline({
-            layout: 'auto', compute: { module: shaderModule, entryPoint: 'compute_sat_vertical' }
+            layout: pipelineLayout, compute: { module: shaderModule, entryPoint: 'compute_sat_vertical' }
         });
         this.pipelineDiffusion = device.createComputePipeline({
-            layout: 'auto', compute: { module: shaderModule, entryPoint: 'compute_diffusion' }
+            layout: pipelineLayout, compute: { module: shaderModule, entryPoint: 'compute_diffusion' }
         });
 
-        // Configuration des Uniforms (mapSize, radius, weight) alignée sur 16 bytes.
         const uniformBuffer = device.createBuffer({
-            size: 16,
+            size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
-        // MapSize (u32, offset 0)
-        device.queue.writeBuffer(uniformBuffer, 0, new Uint32Array([mapSize]));
-        // Radius (i32, offset 4)
-        device.queue.writeBuffer(uniformBuffer, 4, new Int32Array([this.radius]));
-        // Weight (f32, offset 8)
-        device.queue.writeBuffer(uniformBuffer, 8, new Float32Array([this.weight]));
+        const strideFloats = stride / 4;
+        const uniformData = new ArrayBuffer(32);
+        new Uint32Array(uniformData, 0)[0] = mapSize;
+        new Int32Array(uniformData, 4)[0] = this.radius;
+        new Float32Array(uniformData, 8)[0] = this.weight;
+        new Uint32Array(uniformData, 12)[0] = strideFloats;
 
-        // Le Layout déduit par WebGPU (layout: 'auto') de la première passe suffit.
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+
         this.bindGroup = device.createBindGroup({
-            layout: this.pipelineHorizontal.getBindGroupLayout(0),
+            layout: bindGroupLayout,
             entries: [
-                { binding: 0, resource: { buffer: facesBuffers[1] } }, // Face 2 (Input Binary Map)
-                { binding: 1, resource: { buffer: facesBuffers[4] } }, // Face 5 (SAT)
-                { binding: 2, resource: { buffer: facesBuffers[2] } }, // Face 3 (Diffusion Synthèse)
-                { binding: 3, resource: { buffer: uniformBuffer } }
+                { binding: 0, resource: { buffer: cubeBuffer } },
+                { binding: 1, resource: { buffer: uniformBuffer } }
             ]
         });
     }
@@ -145,12 +167,16 @@ export class HeatmapEngine implements ITriadeEngine {
                 mapSize: u32,
                 radius: i32,
                 weight: f32,
+                stride: u32,
             };
 
-            @group(0) @binding(0) var<storage, read> in_map: array<f32>;
-            @group(0) @binding(1) var<storage, read_write> sat_map: array<f32>;
-            @group(0) @binding(2) var<storage, write> out_diffusion: array<f32>;
-            @group(0) @binding(3) var<uniform> config: Uniforms;
+            @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
+            @group(0) @binding(1) var<uniform> config: Uniforms;
+
+            // Face 2: Input, Face 5: SAT, Face 3: Output
+            const FACE_IN = 1u;
+            const FACE_SAT = 4u;
+            const FACE_OUT = 2u;
 
             // --- PASS 1: Prefix Sum Horizontal (Lignes) ---
             @compute @workgroup_size(256)
@@ -158,12 +184,11 @@ export class HeatmapEngine implements ITriadeEngine {
                 let y = global_id.y;
                 if (y >= config.mapSize) { return; }
 
-                // Chaque thread gère une ligne entière (optimisation naive temporaire. FIXME: Parallel Prefix Sum)
                 var current_sum: f32 = 0.0;
                 for (var x: u32 = 0u; x < config.mapSize; x++) {
                     let idx = y * config.mapSize + x;
-                    current_sum += in_map[idx];
-                    sat_map[idx] = current_sum;
+                    current_sum += cube[FACE_IN * config.stride + idx];
+                    cube[FACE_SAT * config.stride + idx] = current_sum;
                 }
             }
 
@@ -173,12 +198,11 @@ export class HeatmapEngine implements ITriadeEngine {
                 let x = global_id.x;
                 if (x >= config.mapSize) { return; }
 
-                // Chaque thread gère une colonne entière
                 var current_sum: f32 = 0.0;
                 for (var y: u32 = 0u; y < config.mapSize; y++) {
                     let idx = y * config.mapSize + x;
-                    current_sum += sat_map[idx];
-                    sat_map[idx] = current_sum;
+                    current_sum += cube[FACE_SAT * config.stride + idx];
+                    cube[FACE_SAT * config.stride + idx] = current_sum;
                 }
             }
 
@@ -188,6 +212,7 @@ export class HeatmapEngine implements ITriadeEngine {
                 let x = i32(global_id.x);
                 let y = i32(global_id.y);
                 let mapSize = i32(config.mapSize);
+                let stride = config.stride;
 
                 if (x >= mapSize || y >= mapSize) { return; }
 
@@ -196,20 +221,56 @@ export class HeatmapEngine implements ITriadeEngine {
                 let max_x = min(mapSize - 1, x + config.radius);
                 let max_y = min(mapSize - 1, y + config.radius);
 
-                // Opcodes O(1)
                 var A: f32 = 0.0;
                 var B: f32 = 0.0;
                 var C: f32 = 0.0;
                 
-                if (min_x > 0 && min_y > 0) { A = sat_map[u32((min_y - 1) * mapSize + (min_x - 1))]; }
-                if (min_y > 0) { B = sat_map[u32((min_y - 1) * mapSize + max_x)]; }
-                if (min_x > 0) { C = sat_map[u32(max_y * mapSize + (min_x - 1))]; }
+                let base = FACE_SAT * stride;
+                if (min_x > 0 && min_y > 0) { A = cube[base + u32((min_y - 1) * mapSize + (min_x - 1))]; }
+                if (min_y > 0) { B = cube[base + u32((min_y - 1) * mapSize + max_x)]; }
+                if (min_x > 0) { C = cube[base + u32(max_y * mapSize + (min_x - 1))]; }
                 
-                let D: f32 = sat_map[u32(max_y * mapSize + max_x)];
+                let D: f32 = cube[base + u32(max_y * mapSize + max_x)];
 
                 let sum = D - B - C + A;
-                out_diffusion[u32(y * mapSize + x)] = sum * config.weight;
+                cube[FACE_OUT * stride + u32(y * mapSize + x)] = sum * config.weight;
             }
         `;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

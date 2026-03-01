@@ -1,8 +1,12 @@
-import type { ITriadeEngine } from "./ITriadeEngine";
+import type { IHypercubeEngine } from "./IHypercubeEngine";
 
-export class EcosystemEngineO1 implements ITriadeEngine {
+export class EcosystemEngineO1 implements IHypercubeEngine {
     public get name(): string {
-        return "Guerre des Triades (Rouge vs Bleu)";
+        return "Ecosystem O1 (Agent-less Pheromones)";
+    }
+
+    public getRequiredFaces(): number {
+        return 6;
     }
 
     public compute(faces: Float32Array[], mapSize: number): void {
@@ -71,3 +75,39 @@ export class EcosystemEngineO1 implements ITriadeEngine {
         current.set(next); // Synchronisation du Front O(1)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

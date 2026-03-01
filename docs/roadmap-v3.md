@@ -57,3 +57,40 @@ Le 7ème Plan devient un "Compositeur" :
 *   Un shader de fragment effectue la synthèse finale (ex: `F3 * F4 + F1`) pour l'affichage utilisateur.
 
 *Note : Cette architecture est idéale pour les simulations de type "God Games", Urbanisme ou RTS massivement peuplés.*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

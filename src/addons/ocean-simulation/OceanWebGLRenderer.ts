@@ -1,4 +1,4 @@
-import { TriadeGrid } from '../../core/TriadeGrid';
+import { HypercubeGrid } from '../../core/HypercubeGrid';
 
 export class OceanWebGLRenderer {
     private gl: WebGL2RenderingContext;
@@ -218,7 +218,7 @@ export class OceanWebGLRenderer {
         this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, xOff, yOff, this.chunkSize, this.chunkSize, this.gl.RED, this.gl.FLOAT, data);
     }
 
-    public render(grid: TriadeGrid) {
+    public render(grid: HypercubeGrid) {
         this.gl.useProgram(this.program);
 
         // Upload each chunk into the master textures using O(1) subset uploads
@@ -256,3 +256,39 @@ export class OceanWebGLRenderer {
         return prog;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

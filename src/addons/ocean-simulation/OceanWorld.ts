@@ -1,5 +1,5 @@
-import { TriadeMasterBuffer } from '../../core/TriadeMasterBuffer';
-import { TriadeGrid } from '../../core/TriadeGrid';
+import { HypercubeMasterBuffer } from '../../core/HypercubeMasterBuffer';
+import { HypercubeGrid } from '../../core/HypercubeGrid';
 import { OceanEngine } from './OceanEngine';
 
 export interface Boat {
@@ -18,12 +18,12 @@ export class OceanWorld {
     public readonly globalSizeW: number;
     public readonly globalSizeH: number;
 
-    public grid: TriadeGrid;
+    public grid: HypercubeGrid;
     public boats: Boat[] = [];
     public keys = { up: false, down: false, left: false, right: false };
 
     constructor(
-        masterBuffer: TriadeMasterBuffer,
+        masterBuffer: HypercubeMasterBuffer,
         cols: number = 2,
         rows: number = 2,
         chunkSize: number = 64
@@ -34,9 +34,9 @@ export class OceanWorld {
         this.globalSizeW = cols * chunkSize;
         this.globalSizeH = rows * chunkSize;
 
-        // Create the TriadeGrid with continuous periodic boundaries
+        // Create the HypercubeGrid with continuous periodic boundaries
         // 24 faces are required by OceanEngine (LBM D2Q9 + Macro + Bio)
-        this.grid = new TriadeGrid(cols, rows, chunkSize, masterBuffer, () => new OceanEngine(), 24, true);
+        this.grid = new HypercubeGrid(cols, rows, chunkSize, masterBuffer, () => new OceanEngine(), 24, true);
 
         this.reset();
     }
@@ -278,3 +278,39 @@ export class OceanWorld {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

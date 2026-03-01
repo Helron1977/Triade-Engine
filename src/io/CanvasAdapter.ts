@@ -1,7 +1,7 @@
 export class CanvasAdapter {
     /**
      * Lit un Tenseur Plat (Face de Float32Array) et le peint sur un contexte Canvas Native.
-     * Cette interface sépare la logique de rendu (UI) du moteur mathématique (Triade).
+     * Cette interface sépare la logique de rendu (UI) du moteur mathématique (Hypercube).
      */
     static renderFaceToCanvas(
         faceData: Float32Array,
@@ -39,3 +39,39 @@ export class CanvasAdapter {
         ctx.putImageData(imgData, 0, 0);
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

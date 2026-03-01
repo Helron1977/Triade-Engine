@@ -38,7 +38,7 @@ export class WebGLAdapter {
         }
         
         void main() {
-            // Lecture du Float32Array exact depuis la VRAM Triade
+            // Lecture du Float32Array exact depuis la VRAM Hypercube
             float val = texture(u_tensor, v_uv).r; 
             
             // Affichage avec la palette
@@ -87,7 +87,7 @@ export class WebGLAdapter {
     }
 
     /**
-     * Propulse la Face Mémoire Triade directement dans la VRAM GPU.
+     * Propulse la Face Mémoire Hypercube directement dans la VRAM GPU.
      * C'est l'opération la plus rapide sur navigateur (O(1) Data Upload).
      */
     public renderFaceToWebGL(faceData: Float32Array) {
@@ -127,3 +127,39 @@ export class WebGLAdapter {
         return prog;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

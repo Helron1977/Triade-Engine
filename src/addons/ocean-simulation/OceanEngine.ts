@@ -1,4 +1,4 @@
-import type { ITriadeEngine } from '../../engines/ITriadeEngine';
+import type { IHypercubeEngine } from '../../engines/IHypercubeEngine';
 
 export interface OceanEngineParams {
     tau_0: number;
@@ -10,8 +10,14 @@ export interface OceanEngineParams {
     vortexStrength: number;
 }
 
-export class OceanEngine implements ITriadeEngine {
-    public readonly name = "OceanEngine";
+export class OceanEngine implements IHypercubeEngine {
+    public get name(): string {
+        return "OceanEngine (LBM + Bio)";
+    }
+
+    public getRequiredFaces(): number {
+        return 23; // 9(f) + 9(f_post) + 1(ux) + 1(uy) + 1(rho) + 1(bio) + 1(obst)
+    }
 
     // Re-use lab-perfect constants
     private readonly w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36];
@@ -206,3 +212,39 @@ export class OceanEngine implements ITriadeEngine {
         for (let i = 0; i < area; i++) bio[i] = bio_next[i];
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

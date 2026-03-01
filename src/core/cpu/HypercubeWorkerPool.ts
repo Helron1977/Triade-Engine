@@ -1,12 +1,14 @@
-import type { TriadeCubeV2 } from '../TriadeCubeV2';
-import type { ITriadeEngine } from '../../engines/ITriadeEngine';
+import type { HypercubeChunk } from '../HypercubeChunk';
+import type { IHypercubeEngine } from '../../engines/IHypercubeEngine';
 
 /**
  * Interface pour les messages échangés entre le Main Thread et les Workers
  */
-export interface TriadeWorkerMessage {
+export interface HypercubeWorkerMessage {
     type: 'INIT' | 'COMPUTE' | 'DONE';
     cubeOffset?: number;
+    stride?: number;
+    numFaces?: number;
     mapSize?: number;
     engineName?: string;
     engineConfig?: any;
@@ -15,11 +17,11 @@ export interface TriadeWorkerMessage {
 }
 
 /**
- * TriadeWorkerPool
+ * HypercubeWorkerPool
  * Gère une file de Web Workers (N threads) pour dispatcher le calcul des cubes "O(1)".
  * Ne fonctionne que si la mémoire est un SharedArrayBuffer.
  */
-export class TriadeWorkerPool {
+export class HypercubeWorkerPool {
     private workers: Worker[] = [];
     private maxThreads: number;
 
@@ -42,7 +44,7 @@ export class TriadeWorkerPool {
 
             for (let i = 0; i < this.maxThreads; i++) {
                 const worker = new Worker(workerScriptPath, { type: 'module' });
-                worker.onmessage = (e: MessageEvent<TriadeWorkerMessage>) => {
+                worker.onmessage = (e: MessageEvent<HypercubeWorkerMessage>) => {
                     if (e.data.type === 'DONE') {
                         // Traité plus loin dans le dispatcher
                     }
@@ -58,13 +60,13 @@ export class TriadeWorkerPool {
      * Attend la résolution de tous les workers.
      */
     async computeAll(
-        cubesToCompute: TriadeCubeV2[],
+        cubesToCompute: HypercubeChunk[],
         sharedBuffer: SharedArrayBuffer,
         engineParams: { name: string, config: any }
     ): Promise<void> {
 
         if (this.workers.length === 0) {
-            console.warn("[TriadeWorkerPool] Pool vide, fallback sur l'éxecution séquentielle (Main Thread).");
+            console.warn("[HypercubeWorkerPool] Pool vide, fallback sur l'éxecution séquentielle (Main Thread).");
             for (const cube of cubesToCompute) {
                 cube.compute();
             }
@@ -95,7 +97,7 @@ export class TriadeWorkerPool {
                     nextCubeIndex++;
                     activeWorkers++;
 
-                    worker.onmessage = (e: MessageEvent<TriadeWorkerMessage>) => {
+                    worker.onmessage = (e: MessageEvent<HypercubeWorkerMessage>) => {
                         if (e.data.type === 'DONE') {
                             completedCubes++;
                             activeWorkers--;
@@ -106,11 +108,13 @@ export class TriadeWorkerPool {
                     worker.postMessage({
                         type: 'COMPUTE',
                         cubeOffset: cube.offset,
+                        stride: (cube as any).stride || cube.mapSize * cube.mapSize * 4, // Fallback safe
+                        numFaces: cube.faces.length,
                         mapSize: cube.mapSize,
                         engineName: engineParams.name,
                         engineConfig: engineParams.config,
                         sharedBuffer: sharedBuffer
-                    } as TriadeWorkerMessage);
+                    } as HypercubeWorkerMessage);
                 }
             };
 
@@ -121,3 +125,39 @@ export class TriadeWorkerPool {
         });
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

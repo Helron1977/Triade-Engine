@@ -1,8 +1,12 @@
-import type { ITriadeEngine } from "./ITriadeEngine";
+import type { IHypercubeEngine } from "./IHypercubeEngine";
 
-export class GameOfLifeEngine implements ITriadeEngine {
+export class GameOfLifeEngine implements IHypercubeEngine {
     public get name(): string {
-        return "Ecosystème Tensoriel (Plantes, Herbivores, Carnivores)";
+        return "Game of Life (O1 Tile)";
+    }
+
+    public getRequiredFaces(): number {
+        return 6; // Standard
     }
 
     public compute(faces: Float32Array[], mapSize: number): void {
@@ -59,3 +63,39 @@ export class GameOfLifeEngine implements ITriadeEngine {
         current.set(next);
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
