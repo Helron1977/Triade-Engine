@@ -37,7 +37,7 @@ self.onmessage = (e: MessageEvent) => {
     const data = e.data;
 
     if (data.type === 'COMPUTE') {
-        const { engineName, engineConfig, sharedBuffer, cubeOffset, stride, numFaces, mapSize } = data;
+        const { engineName, engineConfig, sharedBuffer, cubeOffset, stride, numFaces, mapSize, chunkX, chunkY } = data;
 
         if (!sharedBuffer) {
             console.error("[Worker] Pas de SharedArrayBuffer reçu.");
@@ -51,6 +51,10 @@ self.onmessage = (e: MessageEvent) => {
             engine = new HeatmapEngine(engineConfig?.radius, engineConfig?.weight);
         } else if (engineName === 'FlowFieldEngine-V12') {
             engine = new FlowFieldEngine();
+            if (engineConfig && 'targetX' in engineConfig) {
+                (engine as any).targetX = engineConfig.targetX;
+                (engine as any).targetY = engineConfig.targetY;
+            }
         } else if (engineName === 'Simplified Fluid Dynamics') {
             engine = new FluidEngine(engineConfig?.dt, engineConfig?.buoyancy, engineConfig?.dissipation);
         } else if (engineName === 'Lattice Boltzmann D2Q9 (O(1))') {
@@ -69,7 +73,7 @@ self.onmessage = (e: MessageEvent) => {
 
         // 3. Reconstruire le Cube (Zéro-Copie des données, on ne fait que recréer l'objet JS conteneur)
         // Attention: HypercubeChunk va instancier ses Float32Array par dessus l'offset passé
-        const cube = new HypercubeChunk(mapSize, dummyBuffer as unknown as any, numFaces || 6);
+        const cube = new HypercubeChunk(chunkX || 0, chunkY || 0, mapSize, dummyBuffer as unknown as any, numFaces || 6);
         cube.setEngine(engine);
 
         // 4. Calcul Lourd O(N) -> O(1)

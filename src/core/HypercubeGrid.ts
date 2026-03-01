@@ -47,7 +47,7 @@ export class HypercubeGrid {
         for (let y = 0; y < rows; y++) {
             this.cubes[y] = [];
             for (let x = 0; x < cols; x++) {
-                const cube = new HypercubeChunk(cubeSize, masterBuffer, finalNumFaces);
+                const cube = new HypercubeChunk(x, y, cubeSize, masterBuffer, finalNumFaces);
                 cube.setEngine(y === 0 && x === 0 ? tempEngine : engineFactory());
                 this.cubes[y][x] = cube;
             }
@@ -121,9 +121,7 @@ export class HypercubeGrid {
                 for (let x = 0; x < this.cols; x++) {
                     const cube = this.cubes[y][x];
                     if (cube && cube.engine && cube.engine.computeGPU) {
-                        const passEncoder = commandEncoder.beginComputePass();
-                        cube.engine.computeGPU(passEncoder, cube.mapSize);
-                        passEncoder.end();
+                        cube.engine.computeGPU(HypercubeGPUContext.device, commandEncoder, cube.mapSize);
                     }
                 }
             }
@@ -141,7 +139,9 @@ export class HypercubeGrid {
             const engineName = flatCubes[0]?.engine?.name || 'Unknown';
             const engineConfig = {
                 radius: (flatCubes[0]?.engine as any)?.radius || 10,
-                weight: (flatCubes[0]?.engine as any)?.weight || 1.0
+                weight: (flatCubes[0]?.engine as any)?.weight || 1.0,
+                targetX: (flatCubes[0]?.engine as any)?.targetX ?? 256,
+                targetY: (flatCubes[0]?.engine as any)?.targetY ?? 256
             };
 
             await this.workerPool.computeAll(flatCubes, this.masterBuffer.buffer, { name: engineName, config: engineConfig });
@@ -199,8 +199,7 @@ export class HypercubeGrid {
             }
         }
 
-        // PASS 2: Y-axis (Top/Bottom) - Copying full rows which perfectly transfers the corners (ghost columns from PASS 1) 
-        // to diagonal neighbors automatically!
+        // PASS 2: Y-axis (Top/Bottom)
         for (let y = 0; y < this.rows; y++) {
             for (let x = 0; x < this.cols; x++) {
                 const cube = this.cubes[y][x]!;
@@ -218,6 +217,37 @@ export class HypercubeGrid {
                     const topCube = this.cubes[(y - 1 + this.rows) % this.rows][x]!;
                     const topData = topCube.faces[f];
                     topData.set(data.subarray(1 * s, 1 * s + s), s_minus_1 * s);
+                }
+            }
+        }
+
+        // PASS 3: Corners (Suggestion #8 - Explicit Diagonal Sync for 100% Robustness & future 3D)
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                const cube = this.cubes[y][x]!;
+                const data = cube.faces[f];
+
+                // Determine neighbors
+                const nxP = (x + 1) % this.cols;
+                const nxM = (x - 1 + this.cols) % this.cols;
+                const nyP = (y + 1) % this.rows;
+                const nyM = (y - 1 + this.rows) % this.rows;
+
+                // 1. Bottom-Right Neighbor
+                if (this.isPeriodic || (x < this.cols - 1 && y < this.rows - 1)) {
+                    this.cubes[nyP][nxP]!.faces[f][0] = data[s_minus_2 * s + s_minus_2];
+                }
+                // 2. Bottom-Left Neighbor
+                if (this.isPeriodic || (x > 0 && y < this.rows - 1)) {
+                    this.cubes[nyP][nxM]!.faces[f][s_minus_1] = data[s_minus_2 * s + 1];
+                }
+                // 3. Top-Right Neighbor
+                if (this.isPeriodic || (x < this.cols - 1 && y > 0)) {
+                    this.cubes[nyM][nxP]!.faces[f][s_minus_1 * s] = data[1 * s + s_minus_2];
+                }
+                // 4. Top-Left Neighbor
+                if (this.isPeriodic || (x > 0 && y > 0)) {
+                    this.cubes[nyM][nxM]!.faces[f][s_minus_1 * s + s_minus_1] = data[1 * s + 1];
                 }
             }
         }

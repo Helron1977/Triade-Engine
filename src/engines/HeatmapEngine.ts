@@ -84,29 +84,36 @@ export class HeatmapEngine implements IHypercubeEngine {
     }
 
     /**
-     * Dispatch GPU des différents Compute Shaders.
+     * Dispatch GPU des différents Compute Shaders via des passes distinctes.
      */
-    computeGPU(passEncoder: GPUComputePassEncoder, mapSize: number): void {
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, mapSize: number): void {
         if (!this.bindGroup) return;
 
-        passEncoder.setBindGroup(0, this.bindGroup);
-
-        // PASS 1: Prefix Sum Horizontal (Lignes gérées par thread)
+        // --- PASS 1: Prefix Sum Horizontal ---
         if (this.pipelineHorizontal) {
-            passEncoder.setPipeline(this.pipelineHorizontal);
-            passEncoder.dispatchWorkgroups(Math.ceil(mapSize / 256));
+            const pass1 = commandEncoder.beginComputePass();
+            pass1.setBindGroup(0, this.bindGroup);
+            pass1.setPipeline(this.pipelineHorizontal);
+            pass1.dispatchWorkgroups(Math.ceil(mapSize / 256), mapSize); // Correction : x chunks pour N lignes
+            pass1.end();
         }
 
-        // PASS 2: Prefix Sum Vertical (Colonnes gérées par thread)
+        // --- PASS 2: Prefix Sum Vertical ---
         if (this.pipelineVertical) {
-            passEncoder.setPipeline(this.pipelineVertical);
-            passEncoder.dispatchWorkgroups(Math.ceil(mapSize / 256));
+            const pass2 = commandEncoder.beginComputePass();
+            pass2.setBindGroup(0, this.bindGroup);
+            pass2.setPipeline(this.pipelineVertical);
+            pass2.dispatchWorkgroups(mapSize, Math.ceil(mapSize / 256)); // Correction : N colonnes pour y chunks
+            pass2.end();
         }
 
-        // PASS 3: Extraction Box Filter (Diffusion 2D)
+        // --- PASS 3: Extraction Box Filter (Diffusion 2D) ---
         if (this.pipelineDiffusion) {
-            passEncoder.setPipeline(this.pipelineDiffusion);
-            passEncoder.dispatchWorkgroups(Math.ceil(mapSize / 16), Math.ceil(mapSize / 16));
+            const pass3 = commandEncoder.beginComputePass();
+            pass3.setBindGroup(0, this.bindGroup);
+            pass3.setPipeline(this.pipelineDiffusion);
+            pass3.dispatchWorkgroups(Math.ceil(mapSize / 16), Math.ceil(mapSize / 16));
+            pass3.end();
         }
     }
 

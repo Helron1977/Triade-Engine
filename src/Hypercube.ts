@@ -30,7 +30,7 @@ export class Hypercube {
             throw new Error(`Cube avec le nom ${name} existe déjà.`);
         }
 
-        const cube = new HypercubeChunk(mapSize, this._masterBuffer, numFaces);
+        const cube = new HypercubeChunk(0, 0, mapSize, this._masterBuffer, numFaces);
         cube.setEngine(engine);
         this.cubes.set(name, cube);
         return cube;

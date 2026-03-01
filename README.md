@@ -32,6 +32,11 @@ Hypercube comes out of the box with highly optimized, pre-built physics engines 
 ### 💨 Aerodynamics Engine (Lattice Boltzmann D2Q9)
 A fully continuous computational fluid dynamics solver. It forces "wind" through a wind tunnel using the BGK collision operator. You can draw obstacles into the `obstacles` tensor, and the fluid will realistically compress and flow around them, producing Von Kármán vortex streets.
 
+**WEBGPU Performance**: The LBM engine is fully ported to WGSL, capable of 60 FPS simulations with complex vorticity calculations entirely on the GPU.
+
+![Vortex LBM WebGPU](file:///C:/Users/rolan/.gemini/antigravity/brain/259de522-0c1a-46e8-b091-06f179632c82/webgpu_lbm_success_1772393948259.png)
+*Real-time fluid vorticity calculated at 60 FPS via WebGPU.*
+
 ### 🌊 Ocean Simulator
 An open-world toric-bounded oceanic current simulator powered by the D2Q9 LBM Engine, coupled with a procedural Heatmap generator. It computes fluid velocity and allows simple `Boat` entities to be routed across the continuous fluid grid.
 
@@ -40,6 +45,19 @@ A massive crowd pathfinding engine generating an O(1) integration and vector fie
 
 ### ☁️ Simplified Fluid Dynamics (V3)
 A lightweight Eulerian fluid simulator using pure Advection and Bilinear Sampling. Designed to simulate smoke, gases, and empirical thermal buoyancy directly via WebGPU float32 arrays.
+
+---
+
+## 🔒 Security & Performance (COOP/COEP)
+
+Hypercube Engine leverages **SharedArrayBuffer** for zero-copy CPU multi-threading and high-speed data exchange with Workers. 
+
+Due to browser security requirements (Spectre/Meltdown mitigation), your web server **MUST** send the following headers to enable `SharedArrayBuffer`:
+
+- `Cross-Origin-Embedder-Policy: require-corp`
+- `Cross-Origin-Opener-Policy: same-origin`
+
+**If these headers are missing**: The engine fallback to a standard `ArrayBuffer` (single-threading only).
 
 ---
 

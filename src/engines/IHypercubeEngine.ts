@@ -19,7 +19,7 @@ export interface IHypercubeEngine {
      * @AI_RULE MEMORY_ACCESS: Use 1D sequential iterations `for (let i = 0; i < length; i++)`. Read/Write values via `faces[index][i]`. Map 2D coords using `index = y * mapSize + x`.
      * @AI_RULE ERROR_HANDLING: If generating errors, be highly verbose for self-correction. Example: `throw new Error("[Hypercube] Out of bounds: index ${i} exceeds size ${length}")`
      */
-    compute(faces: FlatTensorView[], mapSize: number): void | Promise<void>;
+    compute(faces: FlatTensorView[], mapSize: number, chunkX?: number, chunkY?: number): void | Promise<void>;
 
     /** 
      * Identifiant explicite du moteur algorithmique.
@@ -53,8 +53,11 @@ export interface IHypercubeEngine {
     /**
      * Dispatch GPU (Optionnel).
      * Effectue l'encodage des commandes (CommandEncoder) pour le Compute Shader.
+     * @param device Le GPUDevice actif.
+     * @param commandEncoder L'encodeur de commandes pour créer des passes (ComputePass).
+     * @param mapSize La dimension N du cube.
      */
-    computeGPU?(passEncoder: GPUComputePassEncoder, mapSize: number): void;
+    computeGPU?(device: GPUDevice, commandEncoder: GPUCommandEncoder, mapSize: number): void;
 }
 
 

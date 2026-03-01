@@ -1,4 +1,4 @@
-import type { IHypercubeEngine } from "./IHypercubeEngine";
+import type { IHypercubeEngine, FlatTensorView } from "./IHypercubeEngine";
 
 /**
  * AerodynamicsEngine - Lattice Boltzmann D2Q9
@@ -24,12 +24,10 @@ export class AerodynamicsEngine implements IHypercubeEngine {
 
     /**
      * Initialisation WebGPU : Prépare les pipelines et les bindings.
-     * Utilise le mode "Packed Buffer" (Binding unique pour tout le cube).
      */
     public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, mapSize: number): void {
         const shaderModule = device.createShaderModule({ code: this.wgslSource });
 
-        // Création d'un Layout explicite pour garantir la compatibilité entre Pipelines et BindGroups
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
                 {
@@ -59,7 +57,6 @@ export class AerodynamicsEngine implements IHypercubeEngine {
             compute: { module: shaderModule, entryPoint: 'compute_vorticity' }
         });
 
-        // Uniforms (mapSize, u0, omega, strideFloats)
         this.uniformBuffer = device.createBuffer({
             size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -74,7 +71,6 @@ export class AerodynamicsEngine implements IHypercubeEngine {
 
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-        // Bind Group : 1 Storage Buffer (Cube) + 1 Uniform Buffer
         this.bindGroup = device.createBindGroup({
             layout: bindGroupLayout,
             entries: [
@@ -85,33 +81,36 @@ export class AerodynamicsEngine implements IHypercubeEngine {
     }
 
     /**
-     * Dispatch GPU des shaders LBM et Vorticité.
+     * Dispatch GPU via deux passes distinctes.
      */
-    public computeGPU(passEncoder: GPUComputePassEncoder, mapSize: number): void {
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, mapSize: number): void {
         if (!this.bindGroup || !this.pipelineLBM || !this.pipelineVorticity) return;
 
         const workgroupSize = 16;
         const workgroupCount = Math.ceil(mapSize / workgroupSize);
 
-        passEncoder.setBindGroup(0, this.bindGroup);
+        // --- PASS 1: LBM Core (Collision + Streaming) ---
+        const pass1 = commandEncoder.beginComputePass();
+        pass1.setBindGroup(0, this.bindGroup);
+        pass1.setPipeline(this.pipelineLBM);
+        pass1.dispatchWorkgroups(workgroupCount, workgroupCount);
+        pass1.end();
 
-        // Pass 1: LBM Core (Collision + Streaming)
-        passEncoder.setPipeline(this.pipelineLBM);
-        passEncoder.dispatchWorkgroups(workgroupCount, workgroupCount);
-
-        // Pass 2: Vorticité
-        passEncoder.setPipeline(this.pipelineVorticity);
-        passEncoder.dispatchWorkgroups(workgroupCount, workgroupCount);
+        // --- PASS 2: Vorticité (Dépend de Pass 1) ---
+        const pass2 = commandEncoder.beginComputePass();
+        pass2.setBindGroup(0, this.bindGroup);
+        pass2.setPipeline(this.pipelineVorticity);
+        pass2.dispatchWorkgroups(workgroupCount, workgroupCount);
+        pass2.end();
     }
 
-    public compute(faces: Float32Array[], mapSize: number): void {
+    public compute(faces: FlatTensorView[], mapSize: number): void {
         const N = mapSize;
         const obstacles = faces[18];
         const ux_out = faces[19];
         const uy_out = faces[20];
         const curl_out = faces[21];
 
-        // Vecteurs du modèle D2Q9
         const cx = [0, 1, 0, -1, 0, 1, -1, -1, 1];
         const cy = [0, 0, 1, 0, -1, 1, 1, -1, -1];
         const w = [4.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 36.0, 1.0 / 36.0, 1.0 / 36.0, 1.0 / 36.0];
@@ -120,7 +119,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         const u0 = 0.12;
         const omega = 1.95;
 
-        // 0. INITIALISATION (F_eq)
+        // 0. INITIALISATION
         if (!this.initialized) {
             for (let idx = 0; idx < N * N; idx++) {
                 const rho = 1.0;
@@ -138,22 +137,17 @@ export class AerodynamicsEngine implements IHypercubeEngine {
 
         let frameDrag = 0;
 
-        // 1. LBM CORE (Loop unique : Macro -> Collision -> Streaming/Bounce-Back)
+        // 1. LBM CORE
         for (let y = 0; y < N; y++) {
             for (let x = 0; x < N; x++) {
                 const idx = y * N + x;
-
-                // On saute les calculs si obstacle (le bounce-back est géré par les voisins fluides)
                 if (obstacles[idx] > 0) {
                     ux_out[idx] = 0;
                     uy_out[idx] = 0;
                     continue;
                 }
 
-                // A. Calcul Macroscopique
-                let rho = 0;
-                let ux = 0;
-                let uy = 0;
+                let rho = 0, ux = 0, uy = 0;
                 for (let i = 0; i < 9; i++) {
                     const f_val = faces[i][idx];
                     rho += f_val;
@@ -161,87 +155,52 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                     uy += cy[i] * f_val;
                 }
 
-                // INLET : Vent forcé à gauche (Tunnel)
-                if (x === 0) {
-                    ux = u0;
-                    uy = 0.0;
-                    rho = 1.0;
-                }
+                if (x === 0) { ux = u0; uy = 0.0; rho = 1.0; }
 
-                if (rho > 0) {
-                    ux /= rho;
-                    uy /= rho;
-                }
+                if (rho > 0) { ux /= rho; uy /= rho; }
                 ux_out[idx] = ux;
                 uy_out[idx] = uy;
 
-                // B. Collision (BGK)
                 const u_sq = ux * ux + uy * uy;
                 for (let i = 0; i < 9; i++) {
                     const cu = cx[i] * ux + cy[i] * uy;
                     const feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sq);
                     const f_post = faces[i][idx] * (1.0 - omega) + feq * omega;
 
-                    // C. Streaming & Bounce-Back Combiné
-                    let nx = x + cx[i];
-                    let ny = y + cy[i];
-
-                    // Torique Y (Wrap top/bottom)
-                    if (ny < 0) ny = N - 1;
-                    else if (ny >= N) ny = 0;
-
-                    // Bordure X : Outlet (Sortie Libre)
-                    if (nx < 0 || nx >= N) {
-                        // En sortie (nx >= N), on laisse la population s'échapper (perte de masse)
-                        // Évite l'accumulation de pression signalée (Steps 4 de la roadmap)
-                        continue;
-                    }
+                    let nx = x + cx[i], ny = y + cy[i];
+                    if (ny < 0) ny = N - 1; else if (ny >= N) ny = 0;
+                    if (nx < 0 || nx >= N) continue;
 
                     const nIdx = ny * N + nx;
-
                     if (obstacles[nIdx] > 0) {
-                        // BOUNCE-BACK : On renvoie la particule vers soi-même avec la direction opposée
                         faces[opp[i] + 9][idx] = f_post;
-
-                        // Mesure de traînée (impact sur CX+)
-                        if (i === 1) frameDrag += f_post;
+                        frameDrag += f_post * cx[i];
                     } else {
-                        // STREAMING NORMAL
                         faces[i + 9][nIdx] = f_post;
                     }
                 }
             }
         }
 
-        // 2. SWAP BUFFERS
-        for (let i = 0; i < 9; i++) {
-            faces[i].set(faces[i + 9]);
-        }
-
-        // Stats UI
+        // 2. SWAP & STATS
+        for (let i = 0; i < 9; i++) faces[i].set(faces[i + 9]);
         this.dragScore = this.dragScore * 0.95 + (frameDrag * 100) * 0.05;
 
-        // 3. VORTICITY (Curl) - Couverture totale N x N pour éviter les bords noirs
+        // 3. VORTICITY
         for (let y = 0; y < N; y++) {
             const row = y * N;
             const yM = y > 0 ? y - 1 : 0;
             const yP = y < N - 1 ? y + 1 : N - 1;
             for (let x = 0; x < N; x++) {
-                const idx = row + x;
                 const xM = x > 0 ? x - 1 : 0;
                 const xP = x < N - 1 ? x + 1 : N - 1;
-
                 const dUy_dx = uy_out[row + xP] - uy_out[row + xM];
                 const dUx_dy = ux_out[yP * N + x] - ux_out[yM * N + x];
-                curl_out[idx] = dUy_dx - dUx_dy;
+                curl_out[row + x] = dUy_dx - dUx_dy;
             }
         }
     }
 
-    /**
-     * Source WGSL pour le moteur Aerodynamics.
-     * Gère les 22 bindings de faces.
-     */
     public get wgslSource(): string {
         return `
             struct Config {
@@ -254,13 +213,17 @@ export class AerodynamicsEngine implements IHypercubeEngine {
             @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
             @group(0) @binding(1) var<uniform> config: Config;
 
-            // Helper pour accéder à une face spécifique
-            fn get_face_val(face_idx: u32, cell_idx: u32) -> f32 {
-                return cube[face_idx * config.stride + cell_idx];
+            const cx: array<f32, 9> = array<f32, 9>(0.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, -1.0, 1.0);
+            const cy: array<f32, 9> = array<f32, 9>(0.0, 0.0, 1.0, 0.0, -1.0, 1.0, 1.0, -1.0, -1.0);
+            const w: array<f32, 9> = array<f32, 9>(0.444444, 0.111111, 0.111111, 0.111111, 0.111111, 0.027777, 0.027777, 0.027777, 0.027777);
+            const opp: array<u32, 9> = array<u32, 9>(0u, 3u, 4u, 1u, 2u, 7u, 8u, 5u, 6u);
+
+            fn get_face(f: u32, id: u32) -> f32 {
+                return cube[f * config.stride + id];
             }
 
-            fn set_face_val(face_idx: u32, cell_idx: u32, val: f32) {
-                cube[face_idx * config.stride + cell_idx] = val;
+            fn set_face(f: u32, id: u32, val: f32) {
+                cube[f * config.stride + id] = val;
             }
 
             @compute @workgroup_size(16, 16)
@@ -271,12 +234,47 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 if (x >= N || y >= N) { return; }
                 let idx = y * N + x;
 
-                // 1. Lire les 9 populations (f0-f8)
-                // 2. Calculer rho, ux, uy
-                // 3. Collision + Streaming vers f9-f17
-                // (Squelette : simple passthrough pour validation)
-                let val = get_face_val(0u, idx);
-                set_face_val(9u, idx, val);
+                let obs = get_face(18u, idx);
+                if (obs > 0.5) { 
+                    set_face(19u, idx, 0.0);
+                    set_face(20u, idx, 0.0);
+                    return; 
+                }
+
+                var rho: f32 = 0.0;
+                var ux: f32 = 0.0;
+                var uy: f32 = 0.0;
+
+                for(var i: u32 = 0u; i < 9u; i = i + 1u) {
+                    let f_val = get_face(i, idx);
+                    rho = rho + f_val;
+                    ux = ux + cx[i] * f_val;
+                    uy = uy + cy[i] * f_val;
+                }
+
+                if (x == 0u) { ux = config.u0; uy = 0.0; rho = 1.0; }
+                if (rho > 0.0) { ux = ux / rho; uy = uy / rho; }
+                set_face(19u, idx, ux);
+                set_face(20u, idx, uy);
+
+                let u_sq = ux * ux + uy * uy;
+                for(var i: u32 = 0u; i < 9u; i = i + 1u) {
+                    let cu = cx[i] * ux + cy[i] * uy;
+                    let feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sq);
+                    let f_post = get_face(i, idx) * (1.0 - config.omega) + feq * config.omega;
+
+                    var nx: i32 = i32(x) + i32(cx[i]);
+                    var ny: i32 = i32(y) + i32(cy[i]);
+                    if (ny < 0) { ny = i32(N) - 1; } else if (ny >= i32(N)) { ny = 0; }
+                    if (nx < 0 || nx >= i32(N)) { continue; }
+
+                    let n_idx = u32(ny) * N + u32(nx);
+                    if (get_face(18u, n_idx) > 0.5) {
+                        set_face(opp[i] + 9u, idx, f_post);
+                    } else {
+                        set_face(i + 9u, n_idx, f_post);
+                    }
+                }
             }
 
             @compute @workgroup_size(16, 16)
@@ -285,44 +283,21 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 let y = id.y;
                 let N = config.mapSize;
                 if (x >= N || y >= N) { return; }
-                // TODO: Calcul du Curl en WGSL
+                let idx = y * N + x;
+
+                for(var i: u32 = 0u; i < 9u; i = i + 1u) {
+                    set_face(i, idx, get_face(i + 9u, idx));
+                }
+
+                let xM = max(x, 1u) - 1u;
+                let xP = min(x + 1u, N - 1u);
+                let yM = max(y, 1u) - 1u;
+                let yP = min(y + 1u, N - 1u);
+
+                let dUy_dx = get_face(20u, y * N + xP) - get_face(20u, y * N + xM);
+                let dUx_dy = get_face(19u, yP * N + x) - get_face(19u, yM * N + x);
+                set_face(21u, idx, dUy_dx - dUx_dy);
             }
         `;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

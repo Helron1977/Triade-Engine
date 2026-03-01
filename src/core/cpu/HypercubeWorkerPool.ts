@@ -14,6 +14,8 @@ export interface HypercubeWorkerMessage {
     engineConfig?: any;
     sharedBuffer?: SharedArrayBuffer;
     facesToSync?: number[];
+    chunkX?: number;
+    chunkY?: number;
 }
 
 /**
@@ -113,7 +115,9 @@ export class HypercubeWorkerPool {
                         mapSize: cube.mapSize,
                         engineName: engineParams.name,
                         engineConfig: engineParams.config,
-                        sharedBuffer: sharedBuffer
+                        sharedBuffer: sharedBuffer,
+                        chunkX: cube.x,
+                        chunkY: cube.y
                     } as HypercubeWorkerMessage);
                 }
             };
