@@ -42,7 +42,7 @@ async function init() {
             await grid.compute();
 
             // Rendu via l'adapter statique
-            CanvasAdapter.renderFaceToCanvas(grid.cubes[0][0]!.faces[0], SIZE, ctx);
+            CanvasAdapter.renderFaceToCanvas(grid.cubes[0][0]!.faces[0], SIZE, ctx, { colorScheme: 'heat', normalizeMax: 3 });
 
             // Stats FPS
             frameCount++;
