@@ -252,6 +252,16 @@ export class HypercubeGrid {
             }
         }
     }
+
+    /**
+     * Libère les ressources asynchrones (ex: Web Workers) associées à la grille.
+     */
+    public destroy() {
+        if (this.workerPool) {
+            this.workerPool.terminate();
+            this.workerPool = null;
+        }
+    }
 }
 
 

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hypercube - Ocean Simulation (Multi-Tile)</title>
+    <style>
+        body {
+            margin: 0;
+            background: #00050a;
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        canvas {
+            background: #000;
+            border: 1px solid #1a2a3a;
+            border-radius: 4px;
+            box-shadow: 0 0 60px rgba(0, 20, 40, 0.5);
+            cursor: crosshair;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 10, 20, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #1a3a5a;
+            pointer-events: none;
+        }
+
+        .stats {
+            font-family: monospace;
+            color: #00d2ff;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .controls {
+            font-size: 11px;
+            color: #5a7a9a;
+            margin-top: 10px;
+            line-height: 1.5;
+        }
+
+        h1 {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            font-weight: 200;
+            letter-spacing: 10px;
+            opacity: 0.2;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ui">
+        <div id="stats" class="stats">Loading Ocean Engine...</div>
+        <div id="grid-info" class="stats">Grid: 2x2 Chunks (512x512 Cells)</div>
+        <div class="controls">
+            <b>Click & Drag:</b> Generate Vortices / Storms<br>
+            <b>Shift + Hover:</b> Clear Local Momentum<br>
+            <b>Multi-Threading:</b> Active (SharedArrayBuffer)
+        </div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <h1>TYDRAS OCEAN</h1>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+
+</html>

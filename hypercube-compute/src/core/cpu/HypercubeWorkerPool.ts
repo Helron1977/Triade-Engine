@@ -128,6 +128,16 @@ export class HypercubeWorkerPool {
             }
         });
     }
+
+    /**
+     * Termine proprement tous les workers pour libérer la mémoire.
+     */
+    public terminate() {
+        for (const worker of this.workers) {
+            worker.terminate();
+        }
+        this.workers = [];
+    }
 }
 
 

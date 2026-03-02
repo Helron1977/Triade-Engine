@@ -6,6 +6,7 @@ import { HeatmapEngine } from '../../engines/HeatmapEngine';
 import { FlowFieldEngine } from '../../engines/FlowFieldEngine';
 import { FluidEngine } from '../../engines/FluidEngine';
 import { AerodynamicsEngine } from '../../engines/AerodynamicsEngine';
+import { OceanEngine } from '../../engines/OceanEngine';
 
 /**
  * Script de base exécuté par les instances Web Worker de la HypercubeWorkerPool.
@@ -60,9 +61,20 @@ self.onmessage = (e: MessageEvent) => {
         } else if (engineName === 'Lattice Boltzmann D2Q9 (O(1))') {
             // Configuration AerodynamicsEngine (Step 13)
             engine = new AerodynamicsEngine();
+        } else if (engineName === 'OceanEngine') {
+            engine = new OceanEngine();
+            if (engineConfig && Object.keys(engineConfig).length > 0) {
+                (engine as any).params = engineConfig;
+            }
         } else {
             // Fallback temporaire pour les autres moteurs non gérés dynamiquement ici
             console.error(`[Worker] Moteur non reconnu ou non supporté par les Web Workers: ${engineName}`);
+            postMessage({ type: 'DONE', success: false });
+            return;
+        }
+
+        if (!engine) {
+            console.error(`[Worker CPU] Erreur fatale: engine est null.`);
             postMessage({ type: 'DONE', success: false });
             return;
         }
@@ -77,11 +89,19 @@ self.onmessage = (e: MessageEvent) => {
         cube.setEngine(engine);
 
         // 4. Calcul Lourd O(N) -> O(1)
-        cube.compute();
-
-        // 5. Libération et notification Main Thread
-        // (La mémoire est déjà à jour via SharedArrayBuffer)
-        postMessage({ type: 'DONE', success: true });
+        try {
+            // Note: cube.compute() is async in HypercubeChunk! We must await it!
+            Promise.resolve(cube.compute()).then(() => {
+                // 5. Libération et notification Main Thread
+                postMessage({ type: 'DONE', success: true });
+            }).catch((err) => {
+                console.error(`[Worker CPU] Crash asynchrone pendant l'exécution du moteur ${engineName}:`, err);
+                postMessage({ type: 'DONE', success: false, error: err?.message });
+            });
+        } catch (error: any) {
+            console.error(`[Worker CPU] Crash synchrone pendant l'exécution du moteur ${engineName}:`, error);
+            postMessage({ type: 'DONE', success: false, error: error?.message });
+        }
     }
 };
 
