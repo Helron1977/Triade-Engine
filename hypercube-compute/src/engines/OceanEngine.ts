@@ -8,15 +8,32 @@ export interface OceanEngineParams {
     bioGrowth: number;
     vortexRadius: number;
     vortexStrength: number;
+    closedBounds: boolean;
 }
 
+/**
+ * OceanEngine – Shallow Water + Plankton Dynamics (D2Q9 LBM)
+ * Simulation océanique simplifiée : courants, tourbillons, forcing interactif, et bio-diffusion.
+ * 
+ * @faces
+ * - 0–8   : f (populations LBM)
+ * - 9–17  : f_post (post-collision temp buffers)
+ * - 18    : ux (vitesse X vectorielle)
+ * - 19    : uy (vitesse Y vectorielle)
+ * - 20    : rho (densité de masse locale)
+ * - 21    : bio (plancton / concentration passive)
+ * - 22    : obst (murs/îles statiques > 0.5)
+ * 
+ * Note globale : La propriété `interaction` doit être mise à jour chaque frame 
+ * par l'environnement ou un `EventListener` de type "mousemove & mousedown".
+ */
 export class OceanEngine implements IHypercubeEngine {
     public get name(): string {
         return "OceanEngine";
     }
 
     public getRequiredFaces(): number {
-        return 23; // 9(f) + 9(f_post) + 1(ux) + 1(uy) + 1(rho) + 1(bio) + 1(obst)
+        return 23; // 0-8: f, 9-17: f_post, 18: ux, 19: uy, 20: rho, 21: bio, 22: obst
     }
 
     // Re-use lab-perfect constants
@@ -36,12 +53,14 @@ export class OceanEngine implements IHypercubeEngine {
         bioDiffusion: 0.05,
         bioGrowth: 0.0005,
         vortexRadius: 28,
-        vortexStrength: 0.02
+        vortexStrength: 0.02,
+        closedBounds: false
     };
 
     public stats = {
         maxU: 0,
-        avgTau: 0
+        avgTau: 0,
+        avgRho: 0
     };
 
     // UI Input simulation (will be fed by the high-level framework/addon)
@@ -61,29 +80,30 @@ export class OceanEngine implements IHypercubeEngine {
         this.stepBio(faces, size);
     }
 
-    private stepLBM(m: Float32Array[], size: number): void {
-        const rho = m[20], ux = m[18], uy = m[19], obst = m[22];
+    private stepLBM(faces: Float32Array[], size: number): void {
+        const rho = faces[20], ux = faces[18], uy = faces[19], obst = faces[22];
 
         let maxU = 0;
         let sumTau = 0;
+        let sumRho = 0;
         let activeCells = 0;
 
         // 0. CLEAR NEXT FRAME BUFFERS
-        for (let k = 0; k < 9; k++) m[k + 9].fill(0);
+        for (let k = 0; k < 9; k++) faces[k + 9].fill(0);
 
         const mx = this.interaction.mouseX;
         const my = this.interaction.mouseY;
         const isForcing = this.interaction.active;
         const vr2 = this.params.vortexRadius * this.params.vortexRadius;
 
-        // 1. PULL-STREAMING & COLLISION (O1 Optimized)
+        // 1. PULL-STREAMING, MACROS & COLLISION (O1 Optimized)
         // We only compute inner domain. Ghost cells (0 and size-1) are managed by Grid Boundary Exchange.
         for (let y = 1; y < size - 1; y++) {
             for (let x = 1; x < size - 1; x++) {
                 const i = y * size + x;
 
                 if (obst[i] > 0.5) {
-                    for (let k = 0; k < 9; k++) m[k + 9][i] = this.w[k];
+                    for (let k = 0; k < 9; k++) faces[k + 9][i] = this.w[k];
                     continue;
                 }
 
@@ -94,11 +114,15 @@ export class OceanEngine implements IHypercubeEngine {
                     const nx = x - this.cx[k];
                     const ny = y - this.cy[k];
 
-                    const ni = ny * size + nx;
-                    if (obst[ni] > 0.5) {
-                        this.pulled_f[k] = m[this.opp[k]][i]; // Bounce back against internal obstacles
+                    if (this.params.closedBounds && (nx <= 0 || nx >= size - 1 || ny <= 0 || ny >= size - 1)) {
+                        this.pulled_f[k] = faces[this.opp[k]][i]; // Bounds half-way bounceback on ghost cells
                     } else {
-                        this.pulled_f[k] = m[k][ni]; // Stream from adjacent cell (can be Ghost Cell)
+                        const ni = ny * size + nx;
+                        if (obst[ni] > 0.5) {
+                            this.pulled_f[k] = faces[this.opp[k]][i]; // Obstacle half-way bounceback
+                        } else {
+                            this.pulled_f[k] = faces[k][ni]; // Normal pull
+                        }
                     }
 
                     r += this.pulled_f[k];
@@ -106,24 +130,36 @@ export class OceanEngine implements IHypercubeEngine {
                     vy += this.pulled_f[k] * this.cy[k];
                 }
 
-                // Stability Clamping
+                // Stability Clamping (Proportional to preserve momentum direction)
                 let isShockwave = false;
-                if (r < 0.8) { r = 0.8; isShockwave = true; }
-                else if (r > 1.2) { r = 1.2; isShockwave = true; }
-                else if (r < 0.0001) r = 0.0001;
+                if (r < 0.8 || r > 1.2 || r < 0.0001) {
+                    const targetRho = Math.max(0.8, Math.min(1.2, r < 0.0001 ? 1.0 : r));
+                    const scale = targetRho / r;
+                    for (let k = 0; k < 9; k++) {
+                        this.pulled_f[k] *= scale;
+                    }
+                    r = targetRho;
+                    isShockwave = true;
+                }
 
                 vx /= r;
                 vy /= r;
 
-                // Vortex Forcing
+                // Vortex Forcing (Apply force neutrally)
+                let Fx = 0;
+                let Fy = 0;
                 if (isForcing) {
                     const dx = x - mx;
                     const dy = y - my;
                     const dist2 = dx * dx + dy * dy;
                     if (dist2 < vr2) {
                         const forceScale = this.params.vortexStrength * 0.005 * (1.0 - Math.sqrt(dist2) / this.params.vortexRadius);
-                        vx += -dy * forceScale;
-                        vy += dx * forceScale;
+                        Fx = -dy * forceScale;
+                        Fy = dx * forceScale;
+
+                        // Modifier la vraie velocité macro pour la collision via S_norm et u2
+                        vx += Fx / r;
+                        vy += Fy / r;
                     }
                 }
 
@@ -149,7 +185,7 @@ export class OceanEngine implements IHypercubeEngine {
                 if (isShockwave) {
                     for (let k = 0; k < 9; k++) {
                         const cu = 3 * (this.cx[k] * vx + this.cy[k] * vy);
-                        m[k + 9][i] = this.w[k] * r * (1 + cu + 0.5 * cu * cu - 1.5 * u2_clamped);
+                        faces[k + 9][i] = this.w[k] * r * (1 + cu + 0.5 * cu * cu - 1.5 * u2_clamped);
                     }
                 } else {
                     let Pxx = 0, Pyy = 0, Pxy = 0;
@@ -164,42 +200,88 @@ export class OceanEngine implements IHypercubeEngine {
                         Pxy += fneq * this.cx[k] * this.cy[k];
                     }
 
-                    const S_norm = Math.sqrt(2 * (Pxx * Pxx + Pyy * Pyy + 2 * Pxy * Pxy));
+                    // Avoid NaN Explosions triggered by S_norm blowing up
+                    let S_norm = Math.sqrt(2 * (Pxx * Pxx + Pyy * Pyy + 2 * Pxy * Pxy));
+                    if (S_norm > 10.0 || isNaN(S_norm)) S_norm = 10.0;
+
                     let tau_eff = this.params.tau_0 + this.params.smagorinsky * S_norm;
-                    if (isNaN(tau_eff) || tau_eff < 0.505) tau_eff = 0.505;
+                    if (isNaN(tau_eff) || tau_eff < 0.505) {
+                        tau_eff = 0.505;
+                    } else if (tau_eff > 2.0) {
+                        tau_eff = 2.0;
+                    }
 
                     sumTau += tau_eff;
+                    sumRho += r;
                     activeCells++;
 
                     for (let k = 0; k < 9; k++) {
-                        m[k + 9][i] = this.pulled_f[k] - (this.pulled_f[k] - this.feq_cache[k]) / tau_eff;
+                        // Guo Forcing term addition to preserve strictly rho
+                        const cu = 3 * (this.cx[k] * vx + this.cy[k] * vy);
+                        const Fk = (1 - 0.5 / tau_eff) * this.w[k] * (3 * (this.cx[k] - vx) + 9 * (this.cx[k] * vx + this.cy[k] * vy) * this.cx[k]) * Fx
+                            + (1 - 0.5 / tau_eff) * this.w[k] * (3 * (this.cy[k] - vy) + 9 * (this.cx[k] * vx + this.cy[k] * vy) * this.cy[k]) * Fy;
+
+                        faces[k + 9][i] = this.pulled_f[k] - (this.pulled_f[k] - this.feq_cache[k]) / tau_eff;
                     }
                 }
             }
         }
 
-        if (activeCells > 0) this.stats.avgTau = sumTau / activeCells;
+        if (activeCells > 0) {
+            this.stats.avgTau = sumTau / activeCells;
+            this.stats.avgRho = sumRho / activeCells;
+        }
         this.stats.maxU = maxU;
 
         // 4. MEMORY SWAP
         for (let k = 0; k < 9; k++) {
-            const tmp = m[k];
-            m[k] = m[k + 9];
-            m[k + 9] = tmp;
+            const tmp = faces[k];
+            faces[k] = faces[k + 9];
+            faces[k + 9] = tmp;
         }
     }
 
-    private stepBio(m: Float32Array[], size: number): void {
-        const bio = m[21];
-        const bio_next = m[17]; // Proxy temp
+    private stepBio(faces: Float32Array[], size: number): void {
+        const bio = faces[21];
+        const bio_next = faces[17]; // Proxy temp
         const area = size * size;
+
+        // Clean Bio Temporary Buffer (Face 17)
+        bio_next.fill(0);
 
         for (let y = 1; y < size - 1; y++) {
             for (let x = 1; x < size - 1; x++) {
                 const i = y * size + x;
 
+                // Diffusion laplacienne
                 const lap = bio[i - 1] + bio[i + 1] + bio[i - size] + bio[i + size] - 4 * bio[i];
                 let next = bio[i] + this.params.bioDiffusion * lap + this.params.bioGrowth * bio[i] * (1 - bio[i]);
+
+                // Application des vortex LBM sur la Bio (Advection Bilinéaire)
+                const ux = faces[18][i];
+                const uy = faces[19][i];
+
+                const advectX = x - ux * 0.8;
+                const advectY = y - uy * 0.8;
+
+                // Clamp aux bords internes
+                const ax = Math.max(1, Math.min(size - 2, advectX));
+                const ay = Math.max(1, Math.min(size - 2, advectY));
+
+                const ix = Math.floor(ax);
+                const iy = Math.floor(ay);
+                const fx = ax - ix;
+                const fy = ay - iy;
+
+                const v00 = bio[iy * size + ix];
+                const v10 = bio[iy * size + Math.min(ix + 1, size - 2)];
+                const v01 = bio[Math.min(iy + 1, size - 2) * size + ix];
+                const v11 = bio[Math.min(iy + 1, size - 2) * size + Math.min(ix + 1, size - 2)];
+
+                const advected = (1 - fy) * ((1 - fx) * v00 + fx * v10) +
+                    fy * ((1 - fx) * v01 + fx * v11);
+
+                next = advected + this.params.bioDiffusion * lap + this.params.bioGrowth * bio[i] * (1 - bio[i]);
 
                 if (next < 0) next = 0;
                 if (next > 1) next = 1;

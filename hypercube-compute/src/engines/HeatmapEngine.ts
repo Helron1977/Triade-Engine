@@ -1,12 +1,21 @@
 import type { IHypercubeEngine } from './IHypercubeEngine';
 
+/**
+ * Engine de diffusion spatiale O(1) basé sur Summed Area Table (Integral Image).
+ * Transforme un filtre box de rayon fixe en opération constante par pixel.
+ * 
+ * @example
+ * const engine = new HeatmapEngine(15, 0.1);
+ * // Face 1 = input (ex: 1.0 aux positions sources)
+ * // Après compute() -> Face 2 = heatmap lissée
+ */
 export class HeatmapEngine implements IHypercubeEngine {
     public get name(): string {
         return "Heatmap (O1 Spatial Convolution)";
     }
 
     public getRequiredFaces(): number {
-        return 6;
+        return 5; // Utilise les faces: 1 (input), 2 (output) et 4 (temp SAT). Faces 0, 3 sont libres.
     }
     public radius: number;
     public weight: number;
@@ -65,8 +74,9 @@ export class HeatmapEngine implements IHypercubeEngine {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
+        // Alignement strict WebGPU 16 bytes: vec4<u32> (mapSize), i32 (radius), f32 (weight), u32 (stride)
         const strideFloats = stride / 4;
-        const uniformData = new ArrayBuffer(32);
+        const uniformData = new ArrayBuffer(16);
         new Uint32Array(uniformData, 0)[0] = mapSize;
         new Int32Array(uniformData, 4)[0] = this.radius;
         new Float32Array(uniformData, 8)[0] = this.weight;
@@ -89,31 +99,40 @@ export class HeatmapEngine implements IHypercubeEngine {
     public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, mapSize: number): void {
         if (!this.bindGroup) return;
 
+        let passEncoder;
+
         // --- PASS 1: Prefix Sum Horizontal ---
         if (this.pipelineHorizontal) {
-            const pass1 = commandEncoder.beginComputePass();
-            pass1.setBindGroup(0, this.bindGroup);
-            pass1.setPipeline(this.pipelineHorizontal);
-            pass1.dispatchWorkgroups(Math.ceil(mapSize / 256), mapSize); // Correction : x chunks pour N lignes
-            pass1.end();
+            passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setBindGroup(0, this.bindGroup);
+            passEncoder.setPipeline(this.pipelineHorizontal);
+            // Dispatch : 1 workgroup (size 256) gère 1 ligne. On dispatch mapSize (Y) workgroups.
+            passEncoder.dispatchWorkgroups(1, mapSize);
+            passEncoder.end();
+            device.queue.submit([commandEncoder.finish()]);
+            commandEncoder = device.createCommandEncoder(); // Nouveau encoder par Safety
         }
 
         // --- PASS 2: Prefix Sum Vertical ---
         if (this.pipelineVertical) {
-            const pass2 = commandEncoder.beginComputePass();
-            pass2.setBindGroup(0, this.bindGroup);
-            pass2.setPipeline(this.pipelineVertical);
-            pass2.dispatchWorkgroups(mapSize, Math.ceil(mapSize / 256)); // Correction : N colonnes pour y chunks
-            pass2.end();
+            passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setBindGroup(0, this.bindGroup);
+            passEncoder.setPipeline(this.pipelineVertical);
+            // Dispatch : 1 workgroup (size 256) gère 1 colonne. On dispatch mapSize (X) workgroups.
+            passEncoder.dispatchWorkgroups(mapSize, 1);
+            passEncoder.end();
+            device.queue.submit([commandEncoder.finish()]);
+            commandEncoder = device.createCommandEncoder();
         }
 
         // --- PASS 3: Extraction Box Filter (Diffusion 2D) ---
         if (this.pipelineDiffusion) {
-            const pass3 = commandEncoder.beginComputePass();
-            pass3.setBindGroup(0, this.bindGroup);
-            pass3.setPipeline(this.pipelineDiffusion);
-            pass3.dispatchWorkgroups(Math.ceil(mapSize / 16), Math.ceil(mapSize / 16));
-            pass3.end();
+            passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setBindGroup(0, this.bindGroup);
+            passEncoder.setPipeline(this.pipelineDiffusion);
+            passEncoder.dispatchWorkgroups(Math.ceil(mapSize / 16), Math.ceil(mapSize / 16));
+            passEncoder.end();
+            // Le dernier encoder.finish() sera submit par le MasterGrid.
         }
     }
 
@@ -125,6 +144,9 @@ export class HeatmapEngine implements IHypercubeEngine {
         const face2 = faces[1]; // Contexte Binaire d'entrée
         const face3 = faces[2]; // Synthèse de Diffusion
         const face5 = faces[4]; // Cheat-code O(1) SAT
+
+        // Clear pass CPU
+        if (face5) face5.fill(0);
 
         // 1. O(N) : Génération Cristallisée (Integral Image)
         for (let y = 0; y < mapSize; y++) {
@@ -185,31 +207,76 @@ export class HeatmapEngine implements IHypercubeEngine {
             const FACE_SAT = 4u;
             const FACE_OUT = 2u;
 
-            // --- PASS 1: Prefix Sum Horizontal (Lignes) ---
+            // --- PASS 1: Prefix Sum Horizontal (par ligne, parallèle avec shared mem) ---
             @compute @workgroup_size(256)
-            fn compute_sat_horizontal(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            fn compute_sat_horizontal(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
                 let y = global_id.y;
                 if (y >= config.mapSize) { return; }
 
-                var current_sum: f32 = 0.0;
-                for (var x: u32 = 0u; x < config.mapSize; x++) {
-                    let idx = y * config.mapSize + x;
-                    current_sum += cube[FACE_IN * config.stride + idx];
-                    cube[FACE_SAT * config.stride + idx] = current_sum;
+                let base_in = FACE_IN * config.stride;
+                let base_sat = FACE_SAT * config.stride;
+                let mapSize = config.mapSize;
+
+                var shared: array<f32, 256>;  // Shared memory pour workgroup
+                let lid = local_id.x;
+
+                // Charge initiale (un thread par colonne dans la ligne)
+                let x = global_id.x;
+                if (x < mapSize) {
+                    shared[lid] = cube[base_in + y * mapSize + x];
+                } else {
+                    shared[lid] = 0.0;
+                }
+                workgroupBarrier();
+
+                // Hillis-Steele scan parallèle (O(log N) steps)
+                var offset: u32 = 1u;
+                while (offset < 256u) {
+                    if (lid >= offset) {
+                        shared[lid] += shared[lid - offset];
+                    }
+                    workgroupBarrier();
+                    offset *= 2u;
+                }
+
+                // Écriture finale dans SAT (seulement si x < mapSize)
+                if (x < mapSize) {
+                    cube[base_sat + y * mapSize + x] = shared[lid];
                 }
             }
 
-            // --- PASS 2: Prefix Sum Vertical (Colonnes) ---
+            // --- PASS 2: Prefix Sum Vertical (par colonne, parallèle avec shared mem) ---
             @compute @workgroup_size(256)
-            fn compute_sat_vertical(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            fn compute_sat_vertical(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
                 let x = global_id.x;
                 if (x >= config.mapSize) { return; }
 
-                var current_sum: f32 = 0.0;
-                for (var y: u32 = 0u; y < config.mapSize; y++) {
-                    let idx = y * config.mapSize + x;
-                    current_sum += cube[FACE_SAT * config.stride + idx];
-                    cube[FACE_SAT * config.stride + idx] = current_sum;
+                let base_sat = FACE_SAT * config.stride;
+                let mapSize = config.mapSize;
+
+                var shared: array<f32, 256>;
+                let lid = local_id.y;  // Note : on swap sur y pour colonnes
+
+                let y = global_id.y;
+                if (y < mapSize) {
+                    shared[lid] = cube[base_sat + y * mapSize + x];
+                } else {
+                    shared[lid] = 0.0;
+                }
+                workgroupBarrier();
+
+                // Hillis-Steele scan parallèle
+                var offset: u32 = 1u;
+                while (offset < 256u) {
+                    if (lid >= offset) {
+                        shared[lid] += shared[lid - offset];
+                    }
+                    workgroupBarrier();
+                    offset *= 2u;
+                }
+
+                if (y < mapSize) {
+                    cube[base_sat + y * mapSize + x] = shared[lid];
                 }
             }
 

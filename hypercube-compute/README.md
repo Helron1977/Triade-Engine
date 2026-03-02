@@ -43,8 +43,60 @@ An open-world toric-bounded oceanic current simulator powered by the D2Q9 LBM En
 ### 🗺️ Flow-Field Engine (V3)
 A massive crowd pathfinding engine generating an O(1) integration and vector field. Utilizing a multi-pass WebGPU Compute Shader (or CPU wavefront fallback), it can guide 10,000+ agents to a target simultaneously without per-entity path calculation overhead.
 
+### 🔥 Heatmap Engine – Spatial Diffusion O(1) via Summed Area Table (V3)
+Generates a heatmap or influence map from a binary/context map in O(N) total time (independent of the radius size).
+
+**Used Faces:**  
+- **Face 1**: Input (sources / binary context, e.g., agent density, hot obstacles, POIs)
+- **Face 4**: SAT temp buffer (Summed Area Table) – **reserved during compute**
+- **Face 2**: Output – final smoothed heatmap (weighted influence)
+
+**Typical Usage**
+```ts
+const engine = new HeatmapEngine(20, 0.05); // Radius 20, Weight 0.05
+grid.setEngine(engine); 
+await grid.compute();
+const heatmap = grid.cubes[0][0].faces[2]; // Float32Array ready for rendering!
+```
+**Advantages**
+- Arbitrary box filter in O(N) instead of O(N·R²)
+- Perfect for: Crowd heatmaps, risk zones, spatial blur, simple influence propagation
+- GPU: Hillis-Steele parallel scan + 3 compute passes -> extremely fast even on mobile
+
+### 🌊 OceanEngine – Shallow Water + Plankton Dynamics (D2Q9 LBM)
+Simulation océanique simplifiée : courants, tourbillons, forcing interactif (vortex souris), + croissance/diffusion plancton.
+
+**Faces clés**  
+- **0–8**   : f (populations LBM)  
+- **9–17**  : f_post (post-collision temp)  
+- **18**    : ux (courant X) 
+- **19**    : uy (courant Y) 
+- **20**    : rho (densité/masse)  
+- **21**    : bio (plancton/concentration spatiale)  
+- **22**    : obst (îles/murs fixes à 1.0)
+
+**Interaction & Paramètres**  
+`tau_0` (relaxation globale), `smagorinsky` (bruit turbulent), `vortexRadius/Strength` pour paramétrer un tourbillon injecté à la position de la souris !
+
 ### ☁️ Simplified Fluid Dynamics (V3)
 A lightweight Eulerian fluid simulator using pure Advection and Bilinear Sampling. Designed to simulate smoke, gases, and empirical thermal buoyancy directly via WebGPU float32 arrays.
+
+**Minimal Example (`/examples/fluid-simple.ts`):**
+```typescript
+import { HypercubeGrid, HypercubeMasterBuffer, FluidEngine } from 'hypercube-compute';
+
+const masterBuffer = new HypercubeMasterBuffer(1024 * 1024);
+const grid = await HypercubeGrid.create(
+    1, 1, 64, masterBuffer,
+    () => new FluidEngine(1.0, 0.4, 0.98),
+    6, false, 'cpu', false
+);
+
+// Splat some heat & density, then compute
+const engine = grid.cubes[0][0]?.engine as FluidEngine;
+engine.addSplat(grid.cubes[0][0]?.faces!, 64, 32, 60, 0, 0, 10, 1.0, 5.0);
+await grid.compute();
+```
 
 ---
 
