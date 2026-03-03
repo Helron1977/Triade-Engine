@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hypercube V4 - 03 Ocean Currents</title>
+    <style>
+        body {
+            margin: 0;
+            background: #050810;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        canvas {
+            border-radius: 12px;
+            box-shadow: 0 0 50px rgba(255, 0, 128, 0.2);
+            cursor: crosshair;
+            image-rendering: auto;
+            width: 800px;
+            height: 800px;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20px;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            opacity: 0.9;
+            color: #ff0080;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+  <script type="module" crossorigin src="/assets/index-4P7mz68e.js"></script>
+</head>
+
+<body>
+    <div class="ui">
+        <h1>Ocean Currents</h1>
+        <p>Lattice Boltzmann D2Q9 • Pure Tensor Dynamics</p>
+    </div>
+    <canvas id="app"></canvas>
+</body>
+
+</html>

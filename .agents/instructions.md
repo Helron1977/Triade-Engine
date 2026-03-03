@@ -12,3 +12,6 @@
 ## Multi-Chunk Sync & Artifacts
 - **LBM Boundaries**: Always respect the 1-pixel ghost cell margin. Loops must iterate from `1` to `N-2`.
 - **getSyncFaces**: Ensure all engines implement `getSyncFaces` to synchronize microscopic populations (faces 0-8) and macro variables (faces 18-20).
+
+## CI/CD & Deployment
+- **Documentation Demos**: Whenever you modify an example demo that is listed in the documentation (e.g. `01` to `07`), you **MUST** recompile it (`npm run build`) and correctly copy/deploy its built assets into the root `/docs/` folder of the repository. If you skip this step, the online GitHub Pages links will point to stale, broken, or older versions of the examples.
