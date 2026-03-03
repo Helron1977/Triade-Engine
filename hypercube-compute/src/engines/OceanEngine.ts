@@ -37,7 +37,7 @@ export class OceanEngine implements IHypercubeEngine {
     }
 
     public getSyncFaces(): number[] {
-        return [0, 1, 2, 3, 4, 5, 6, 7, 8]; // LBM a besoin de streamer ses 9 populations aux frontières !
+        return [0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 19, 20]; // LBM pop (0-8) + macros (ux, uy, rho)
     }
 
     // Re-use lab-perfect constants

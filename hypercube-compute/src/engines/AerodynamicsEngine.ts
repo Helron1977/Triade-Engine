@@ -205,11 +205,15 @@ export class AerodynamicsEngine implements IHypercubeEngine {
             for (let y = 0; y < ny; y++) {
                 const yM = y > 0 ? y - 1 : 0;
                 const yP = y < ny - 1 ? y + 1 : ny - 1;
+                const dyDist = (y === 0 || y === ny - 1) ? 1.0 : 2.0;
+
                 for (let x = 0; x < nx; x++) {
                     const xM = x > 0 ? x - 1 : 0;
                     const xP = x < nx - 1 ? x + 1 : nx - 1;
-                    const dUy_dx = uy_out[zOff + y * nx + xP] - uy_out[zOff + y * nx + xM];
-                    const dUx_dy = ux_out[zOff + yP * nx + x] - ux_out[zOff + yM * nx + x];
+                    const dxDist = (x === 0 || x === nx - 1) ? 1.0 : 2.0;
+
+                    const dUy_dx = (uy_out[zOff + y * nx + xP] - uy_out[zOff + y * nx + xM]) / dxDist;
+                    const dUx_dy = (ux_out[zOff + yP * nx + x] - ux_out[zOff + yM * nx + x]) / dyDist;
                     curl_out[zOff + y * nx + x] = dUy_dx - dUx_dy;
                 }
             }
@@ -311,8 +315,14 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 let yM = max(y, 1u) - 1u;
                 let yP = min(y + 1u, N - 1u);
 
-                let dUy_dx = get_face(20u, y * N + xP) - get_face(20u, y * N + xM);
-                let dUx_dy = get_face(19u, yP * N + x) - get_face(19u, yM * N + x);
+                var dxDist: f32 = 2.0;
+                if (x == 0u || x == N - 1u) { dxDist = 1.0; }
+                
+                var dyDist: f32 = 2.0;
+                if (y == 0u || y == N - 1u) { dyDist = 1.0; }
+
+                let dUy_dx = (get_face(20u, y * N + xP) - get_face(20u, y * N + xM)) / dxDist;
+                let dUx_dy = (get_face(19u, yP * N + x) - get_face(19u, yM * N + x)) / dyDist;
                 set_face(21u, idx, dUy_dx - dUx_dy);
             }
         `;

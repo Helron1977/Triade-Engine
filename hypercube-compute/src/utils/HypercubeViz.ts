@@ -123,7 +123,7 @@ export class HypercubeViz {
         data: Float32Array,
         width: number,
         height: number,
-        colors: 'green' | 'heat' | 'grayscale' | 'viridis' | 'plasma' | 'magma' = 'green',
+        colors: 'green' | 'heat' | 'grayscale' | 'viridis' | 'plasma' | 'magma' | 'bipolar' = 'green',
         normalize: boolean = true
     ): void {
         const ctx = canvas.getContext('2d');
@@ -138,17 +138,41 @@ export class HypercubeViz {
         const buf = new Uint32Array(imgData.data.buffer);
 
         let maxVal = 1.0;
+        let minVal = 0.0;
         if (normalize) {
             maxVal = 0.0001;
+            minVal = -0.0001;
             for (let i = 0; i < data.length; i++) {
                 if (data[i] > maxVal) maxVal = data[i];
+                if (data[i] < minVal) minVal = data[i];
             }
         }
 
-        for (let i = 0; i < data.length; i++) {
-            const v = Math.max(0, Math.min(1, data[i] / maxVal)); // Normalized 0..1
+        // Pour le mode bipolaire, on normalise par rapport à la plus grande valeur absolue
+        const absMax = Math.max(Math.abs(maxVal), Math.abs(minVal));
 
-            if (colors === 'viridis') {
+        for (let i = 0; i < data.length; i++) {
+            let v = data[i] / maxVal; // Normalized default behavior
+            if (colors === 'bipolar') {
+                v = data[i] / absMax; // -1.0 to 1.0 range
+            }
+            v = Math.max(-1, Math.min(1, v)); // Clamp between -1 and 1
+
+            if (colors === 'bipolar') {
+                if (v < 0) {
+                    const t = -v; // negative: blue -> cyan
+                    const r = 0;
+                    const g = Math.floor(255 * t);
+                    const b = 255;
+                    buf[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
+                } else {
+                    const t = v; // positive: white -> red
+                    const r = 255;
+                    const g = Math.floor(255 * (1 - t));
+                    const b = Math.floor(255 * (1 - t));
+                    buf[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
+                }
+            } else if (colors === 'viridis') {
                 const r = Math.floor(v * v * 255);
                 const g = Math.floor(v * 255);
                 const b = Math.floor((1 - v) * 128 + v * 32);
@@ -186,7 +210,7 @@ export class HypercubeViz {
         canvas: HTMLCanvasElement,
         chunk: HypercubeChunk,
         faceIndex: number = 0,
-        colormap: 'green' | 'viridis' | 'plasma' | 'magma' = 'viridis'
+        colormap: 'green' | 'viridis' | 'plasma' | 'magma' | 'bipolar' = 'viridis'
     ): void {
         const faceData = chunk.faces[faceIndex];
         this.renderToCanvas(canvas, faceData, chunk.nx, chunk.ny, colormap, true);
