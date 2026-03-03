@@ -1,6 +1,6 @@
 {
   "name": "hypercube-compute",
-  "version": "4.0.0-alpha.1",
+  "version": "4.0.0-alpha.2",
   "description": "A high-performance O(1) tensor-based compute engine for Web and Node.js environments.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

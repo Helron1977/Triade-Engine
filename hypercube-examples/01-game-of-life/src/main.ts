@@ -15,6 +15,7 @@ async function init() {
     }), 3);
 
     const chunk = grid.cubes[0][0];
+    if (!chunk) throw new Error("Could not initialize HypercubeChunk. Check grid dimensions.");
     const faces = chunk.faces;
 
     // Initial Random Seed

@@ -6,6 +6,7 @@
   [![npm version](https://img.shields.io/npm/v/hypercube-compute.svg?style=flat-square)](https://www.npmjs.com/package/hypercube-compute)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
   [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
+  [![Try it Live](https://img.shields.io/badge/Try%20it%20Live-Green?style=for-the-badge&logo=icloud&logoColor=white)](https://helron1977.github.io/Hypercube-Compute/)
 </div>
 
 
@@ -52,7 +53,7 @@ A fully continuous computational fluid dynamics solver. It forces "wind" through
 
 **WEBGPU Performance**: The LBM engine is fully ported to WGSL, capable of 60 FPS simulations with complex vorticity calculations entirely on the GPU.
 
-![Vortex LBM WebGPU](file:///C:/Users/rolan/.gemini/antigravity/brain/259de522-0c1a-46e8-b091-06f179632c82/webgpu_lbm_success_1772393948259.png)
+![Vortex LBM WebGPU](https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/docs/assets/webgpu_vortex.png)
 *Real-time fluid vorticity calculated at 60 FPS via WebGPU.*
 
 ### 🌊 Ocean Simulator
@@ -190,9 +191,13 @@ const loop = () => {
     // Sync all LBM populations (Faces 0-8)
     grid.compute([0, 1, 2, 3, 4, 5, 6, 7, 8]); 
 
-    const curl = grid.cubes[0][0].faces[21]; // Vorticity/Rotation
-    HypercubeViz.renderToCanvas(canvas, curl, 256, 256, 'heat');
+    // Render Speed (Velocity Magnitude)
+    const ux = grid.cubes[0][0].faces[18]; // Velocity X
+    const uy = grid.cubes[0][0].faces[19]; // Velocity Y
+    const speed = new Float32Array(ux.length);
+    for (let i = 0; i < ux.length; i++) speed[i] = Math.sqrt(ux[i]**2 + uy[i]**2);
     
+    HypercubeViz.renderToCanvas(canvas, speed, 256, 256, 'plasma');
     requestAnimationFrame(loop);
 };
 ```
