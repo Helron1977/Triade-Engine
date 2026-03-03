@@ -9,7 +9,9 @@ export interface HypercubeWorkerMessage {
     cubeOffset?: number;
     stride?: number;
     numFaces?: number;
-    mapSize?: number;
+    nx?: number;
+    ny?: number;
+    nz?: number;
     engineName?: string;
     engineConfig?: any;
     sharedBuffer?: SharedArrayBuffer;
@@ -110,9 +112,11 @@ export class HypercubeWorkerPool {
                     worker.postMessage({
                         type: 'COMPUTE',
                         cubeOffset: cube.offset,
-                        stride: (cube as any).stride || cube.mapSize * cube.mapSize * 4, // Fallback safe
+                        stride: (cube as any).stride || cube.nx * cube.ny * cube.nz * 4, // Fallback safe
                         numFaces: cube.faces.length,
-                        mapSize: cube.mapSize,
+                        nx: cube.nx,
+                        ny: cube.ny,
+                        nz: cube.nz,
                         engineName: engineParams.name,
                         engineConfig: engineParams.config,
                         sharedBuffer: sharedBuffer,

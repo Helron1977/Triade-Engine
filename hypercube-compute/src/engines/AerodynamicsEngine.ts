@@ -7,6 +7,7 @@ import type { IHypercubeEngine, FlatTensorView } from "./IHypercubeEngine";
 export class AerodynamicsEngine implements IHypercubeEngine {
     public dragScore: number = 0;
     private initialized: boolean = false;
+    public isLeftBoundary: boolean = true; // Par défaut, injecte du vent à gauche
 
     // WebGPU Attributes
     private pipelineLBM: GPUComputePipeline | null = null;
@@ -20,6 +21,10 @@ export class AerodynamicsEngine implements IHypercubeEngine {
 
     public getRequiredFaces(): number {
         return 22; // 9(fi) + 9(f_post) + 1(obstacles) + 3(ux, uy, curl)
+    }
+
+    public getSyncFaces(): number[] {
+        return [0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 19, 20]; // Sync LBM pops + macro variables (obstacles, ux, uy)
     }
 
     /**
@@ -61,7 +66,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         });
 
         this.uniformBuffer = device.createBuffer({
-            size: 32,
+            size: 32, // 5 * 4 bytes = 20, aligned to 32
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -71,11 +76,10 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         const f32 = new Float32Array(uniformData);
 
         u32[0] = nx;
-        u32[1] = ny;
-        u32[2] = nz;
-        f32[3] = 0.12; // u0
-        f32[4] = 1.95; // omega
-        u32[5] = strideFloats;
+        f32[1] = 0.12; // u0
+        f32[2] = 1.95; // omega
+        u32[3] = strideFloats;
+        u32[4] = this.isLeftBoundary ? 1 : 0;
 
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
@@ -149,8 +153,8 @@ export class AerodynamicsEngine implements IHypercubeEngine {
             const zOff = lz * ny * nx;
 
             // 1. LBM CORE
-            for (let y = 0; y < ny; y++) {
-                for (let x = 0; x < nx; x++) {
+            for (let y = 1; y < ny - 1; y++) {
+                for (let x = 1; x < nx - 1; x++) {
                     const idx = zOff + y * nx + x;
                     if (obstacles[idx] > 0) {
                         ux_out[idx] = 0;
@@ -166,7 +170,8 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                         uy += cy[i] * f_val;
                     }
 
-                    if (x === 0) { ux = u0; uy = 0.0; rho = 1.0; }
+                    // Appliquer l'inlet sur la bordure gauche physique (uniquement pour un seul chunk sans multisync, sinon mieux vaut utiliser addGlobalCurrent)
+                    if (x === 1 && this.isLeftBoundary) { ux = u0; uy = 0.0; rho = 1.0; }
 
                     if (rho > 0) { ux /= rho; uy /= rho; }
                     ux_out[idx] = ux;
@@ -195,22 +200,24 @@ export class AerodynamicsEngine implements IHypercubeEngine {
 
             // 2. SWAP par couche
             for (let i = 0; i < 9; i++) {
-                for (let j = 0; j < nx * ny; j++) {
-                    const idx = zOff + j;
-                    faces[i][idx] = faces[i + 9][idx];
+                for (let y = 1; y < ny - 1; y++) {
+                    for (let x = 1; x < nx - 1; x++) {
+                        const idx = zOff + y * nx + x;
+                        faces[i][idx] = faces[i + 9][idx];
+                    }
                 }
             }
 
             // 3. VORTICITY
-            for (let y = 0; y < ny; y++) {
-                const yM = y > 0 ? y - 1 : 0;
-                const yP = y < ny - 1 ? y + 1 : ny - 1;
-                const dyDist = (y === 0 || y === ny - 1) ? 1.0 : 2.0;
+            for (let y = 1; y < ny - 1; y++) {
+                const yM = y - 1;
+                const yP = y + 1;
+                const dyDist = 2.0;
 
-                for (let x = 0; x < nx; x++) {
-                    const xM = x > 0 ? x - 1 : 0;
-                    const xP = x < nx - 1 ? x + 1 : nx - 1;
-                    const dxDist = (x === 0 || x === nx - 1) ? 1.0 : 2.0;
+                for (let x = 1; x < nx - 1; x++) {
+                    const xM = x - 1;
+                    const xP = x + 1;
+                    const dxDist = 2.0;
 
                     const dUy_dx = (uy_out[zOff + y * nx + xP] - uy_out[zOff + y * nx + xM]) / dxDist;
                     const dUx_dy = (ux_out[zOff + yP * nx + x] - ux_out[zOff + yM * nx + x]) / dyDist;
@@ -229,6 +236,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 u0: f32,
                 omega: f32,
                 stride: u32,
+                isLeftBoundary: u32,
             };
 
             @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
@@ -252,7 +260,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 let x = id.x;
                 let y = id.y;
                 let N = config.mapSize;
-                if (x >= N || y >= N) { return; }
+                if (x == 0u || x >= N - 1u || y == 0u || y >= N - 1u) { return; }
                 let idx = y * N + x;
 
                 let obs = get_face(18u, idx);
@@ -273,7 +281,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                     uy = uy + cy[i] * f_val;
                 }
 
-                if (x == 0u) { ux = config.u0; uy = 0.0; rho = 1.0; }
+                if (x == 1u && config.isLeftBoundary > 0u) { ux = config.u0; uy = 0.0; rho = 1.0; }
                 if (rho > 0.0) { ux = ux / rho; uy = uy / rho; }
                 set_face(19u, idx, ux);
                 set_face(20u, idx, uy);
@@ -303,23 +311,20 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 let x = id.x;
                 let y = id.y;
                 let N = config.mapSize;
-                if (x >= N || y >= N) { return; }
+                if (x == 0u || x >= N - 1u || y == 0u || y >= N - 1u) { return; }
                 let idx = y * N + x;
 
                 for(var i: u32 = 0u; i < 9u; i = i + 1u) {
                     set_face(i, idx, get_face(i + 9u, idx));
                 }
 
-                let xM = max(x, 1u) - 1u;
-                let xP = min(x + 1u, N - 1u);
-                let yM = max(y, 1u) - 1u;
-                let yP = min(y + 1u, N - 1u);
+                let xM = x - 1u;
+                let xP = x + 1u;
+                let yM = y - 1u;
+                let yP = y + 1u;
 
                 var dxDist: f32 = 2.0;
-                if (x == 0u || x == N - 1u) { dxDist = 1.0; }
-                
                 var dyDist: f32 = 2.0;
-                if (y == 0u || y == N - 1u) { dyDist = 1.0; }
 
                 let dUy_dx = (get_face(20u, y * N + xP) - get_face(20u, y * N + xM)) / dxDist;
                 let dUx_dy = (get_face(19u, yP * N + x) - get_face(19u, yM * N + x)) / dyDist;
