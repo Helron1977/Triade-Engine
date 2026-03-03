@@ -198,12 +198,19 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 }
             }
 
+            // 1.5 BOUNDARY CONDITIONS (Simple Bounce Back for boundaries not handled in loop)
+            // Note: In LBM, we need to ensure p_next is fully valid. 
+            // The loops 1..N-2 only stream into physical nodes.
+            // Boundaries are handled by sync faces (in multi-chunk) or here (single chunk).
+
             // 2. SWAP par couche
             for (let i = 0; i < 9; i++) {
-                for (let y = 1; y < ny - 1; y++) {
-                    for (let x = 1; x < nx - 1; x++) {
+                const f_in = faces[i];
+                const f_out = faces[i + 9];
+                for (let y = 0; y < ny; y++) {
+                    for (let x = 0; x < nx; x++) {
                         const idx = zOff + y * nx + x;
-                        faces[i][idx] = faces[i + 9][idx];
+                        f_in[idx] = f_out[idx];
                     }
                 }
             }
@@ -212,18 +219,22 @@ export class AerodynamicsEngine implements IHypercubeEngine {
             for (let y = 1; y < ny - 1; y++) {
                 const yM = y - 1;
                 const yP = y + 1;
-                const dyDist = 2.0;
 
                 for (let x = 1; x < nx - 1; x++) {
-                    const xM = x - 1;
-                    const xP = x + 1;
-                    const dxDist = 2.0;
+                    const xM = x > 1 ? x - 1 : 1;
+                    const xP = x < nx - 2 ? x + 1 : nx - 2;
+                    const dxDist = (x === 1 || x === nx - 2) ? 1.0 : 2.0;
+
+                    const loc_yM = y > 1 ? y - 1 : 1;
+                    const loc_yP = y < ny - 2 ? y + 1 : ny - 2;
+                    const loc_dyDist = (y === 1 || y === ny - 2) ? 1.0 : 2.0;
 
                     const dUy_dx = (uy_out[zOff + y * nx + xP] - uy_out[zOff + y * nx + xM]) / dxDist;
-                    const dUx_dy = (ux_out[zOff + yP * nx + x] - ux_out[zOff + yM * nx + x]) / dyDist;
+                    const dUx_dy = (ux_out[zOff + loc_yP * nx + x] - ux_out[zOff + loc_yM * nx + x]) / loc_dyDist;
                     curl_out[zOff + y * nx + x] = dUy_dx - dUx_dy;
                 }
             }
+            this.initialized = true;
         }
 
         this.dragScore = this.dragScore * 0.95 + (frameDrag * 100 / nz) * 0.05;
@@ -318,13 +329,16 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                     set_face(i, idx, get_face(i + 9u, idx));
                 }
 
-                let xM = x - 1u;
-                let xP = x + 1u;
-                let yM = y - 1u;
-                let yP = y + 1u;
+                let xM = max(x, 2u) - 1u;      // clamp to 1 
+                let xP = min(x + 1u, N - 2u);  // clamp to N-2
+                let yM = max(y, 2u) - 1u;
+                let yP = min(y + 1u, N - 2u);
 
                 var dxDist: f32 = 2.0;
+                if (x == 1u || x == N - 2u) { dxDist = 1.0; }
+
                 var dyDist: f32 = 2.0;
+                if (y == 1u || y == N - 2u) { dyDist = 1.0; }
 
                 let dUy_dx = (get_face(20u, y * N + xP) - get_face(20u, y * N + xM)) / dxDist;
                 let dUx_dy = (get_face(19u, yP * N + x) - get_face(19u, yM * N + x)) / dyDist;

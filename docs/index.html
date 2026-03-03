@@ -4,76 +4,55 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Triade Engine Demo</title>
+    <title>Hypercube V4 - 04 Aerodynamics</title>
     <style>
-        body,
-        html {
+        body {
             margin: 0;
-            padding: 0;
-            background: #0a0a0a;
-            color: white;
+            background: #050810;
+            color: #fff;
             font-family: 'Inter', sans-serif;
-            height: 100vh;
+            overflow: hidden;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            overflow: hidden;
+            height: 100vh;
         }
 
         canvas {
-            box-shadow: 0 0 40px rgba(0, 255, 136, 0.1);
-            border-radius: 8px;
-            border: 1px solid #222;
-            image-rendering: pixelated;
-            width: 512px;
-            height: 512px;
-            background: #111;
+            border-radius: 12px;
+            box-shadow: 0 0 50px rgba(0, 255, 128, 0.2);
+            cursor: default;
+            image-rendering: auto;
+            width: 800px;
+            height: 800px;
         }
 
-        .header {
-            margin-bottom: 25px;
+        .ui {
+            position: absolute;
+            top: 20px;
             text-align: center;
-            z-index: 10;
+            pointer-events: none;
         }
 
         h1 {
             margin: 0;
-            font-size: 28px;
-            color: #00ff88;
-            letter-spacing: -0.5px;
-            font-weight: 600;
-        }
-
-        p {
-            margin: 8px 0 0;
-            color: #888;
-            font-size: 15px;
-        }
-
-        .tag {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            background: rgba(0, 255, 136, 0.1);
-            color: #00ff88;
-            font-size: 12px;
-            font-weight: bold;
-            margin-bottom: 15px;
+            font-size: 1.5rem;
+            opacity: 0.9;
+            color: #00ff80;
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
     </style>
-    <script type="module" crossorigin src="./assets/index-CK1vOvbs.js"></script>
+  <script type="module" crossorigin src="/assets/index-CK1vOvbs.js"></script>
 </head>
 
 <body>
-    <div class="header">
-        <div class="tag">Zero-Allocation Compute</div>
-        <h1>🌊 Triade GodMode O(1)</h1>
-        <p>Lattice Boltzmann (LBM D2Q9) Fluid Mechanics Simulation.<br /><b>Click & Drag</b> on the grid to draw solid
-            walls. The fluid flows from Left to Right!</p>
+    <div class="ui">
+        <h1>Wind Tunnel</h1>
+        <p>Interaction with Obstacles • D2Q9 LBM solver</p>
     </div>
-    <canvas id="triade-canvas" width="512" height="512"></canvas>
-
+    <canvas id="app"></canvas>
 </body>
 
 </html>

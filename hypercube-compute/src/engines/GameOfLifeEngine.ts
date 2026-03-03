@@ -19,7 +19,7 @@ export class GameOfLifeEngine implements IHypercubeEngine {
             growthProb: config.growthProb ?? 0.03,
             eatThresholdBase: config.eatThresholdBase ?? 3.5,
             plantEatThreshold: config.plantEatThreshold ?? 2.8,
-            herbiEatThreshold: config.herbiEatThreshold ?? 3.8,
+            herbiEatThreshold: config.herbiEatThreshold ?? 3.2,
             carniEatThreshold: config.carniEatThreshold ?? 3.2,
             carniStarveThreshold: config.carniStarveThreshold ?? 3.5
         };

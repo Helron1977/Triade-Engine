@@ -22,8 +22,13 @@ export class FlowFieldEngine implements IHypercubeEngine {
         // isPeriodic is handled by the IHypercubeEngine interface and Grid
     }
 
+    public setTarget(x: number, y: number): void {
+        this.targetX = x;
+        this.targetY = y;
+    }
+
     public async compute(faces: Float32Array[], nx: number, ny: number, nz: number, chunkX: number = 0, chunkY: number = 0, chunkZ: number = 0): Promise<void> {
-        const face3_Integration = faces[2];
+        const face0_Distance = faces[0];
         const face4_ForceX = faces[3];
         const face5_ForceY = faces[4];
 
@@ -46,8 +51,8 @@ export class FlowFieldEngine implements IHypercubeEngine {
                     const distSq = dx * dx + dySq;
                     const dist = Math.sqrt(distSq);
 
-                    // Potential for visualization (Face 3)
-                    face3_Integration[idx] = dist;
+                    // Potential for visualization (Face 0)
+                    face0_Distance[idx] = dist;
 
                     // Force Vector pointing directly to target
                     if (dist > 0.1) {

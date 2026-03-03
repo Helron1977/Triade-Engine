@@ -18,11 +18,13 @@ export interface OceanEngineParams {
  * @faces
  * - 0–8   : f (populations LBM)
  * - 9–17  : f_post (post-collision temp buffers)
- * - 18    : ux (vitesse X vectorielle)
- * - 19    : uy (vitesse Y vectorielle)
- * - 20    : rho (densité de masse locale)
- * - 21    : bio (plancton / concentration passive)
- * - 22    : obst (murs/îles statiques > 0.5)
+ * - 18    : obst (murs/îles statiques > 0.5)
+ * - 19    : ux (vitesse X vectorielle)
+ * - 20    : uy (vitesse Y vectorielle)
+ * - 21    : curl (vorticité pour rendu)
+ * - 22    : rho (densité de masse locale)
+ * - 23    : bio (plancton / concentration passive)
+ * - 24    : bio_next (temp buffer pour bio)
  * 
  * Note globale : La propriété `interaction` doit être mise à jour chaque frame 
  * par l'environnement ou un `EventListener` de type "mousemove & mousedown".
@@ -33,7 +35,7 @@ export class OceanEngine implements IHypercubeEngine {
     }
 
     public getRequiredFaces(): number {
-        return 23; // 0-8: f, 9-17: f_post, 18: ux, 19: uy, 20: rho, 21: bio, 22: obst
+        return 25; // Suite faces 0-17 + 18-24
     }
 
     public getSyncFaces(): number[] {
@@ -87,8 +89,8 @@ export class OceanEngine implements IHypercubeEngine {
     }
 
     private stepLBM(faces: Float32Array[], nx: number, ny: number, lz: number): void {
-        const size = nx; // Assuming square for now as per old LBM code, but let's be robust
-        const rho = faces[20], ux = faces[18], uy = faces[19], obst = faces[22];
+        const size = nx;
+        const rho = faces[22], ux = faces[19], uy = faces[20], obst = faces[18];
         const zOff = lz * ny * nx;
 
         let maxU = 0;
@@ -220,6 +222,25 @@ export class OceanEngine implements IHypercubeEngine {
             }
         }
 
+        // 2. VORTICITY / CURL Calculation (Face 21 - needed for visualization)
+        const curl_out = faces[21];
+        for (let y = 1; y < ny - 1; y++) {
+            for (let x = 1; x < nx - 1; x++) {
+                const i = zOff + y * nx + x;
+                const xM = x > 1 ? x - 1 : 1;
+                const xP = x < nx - 2 ? x + 1 : nx - 2;
+                const dxDist = (x === 1 || x === nx - 2) ? 1.0 : 2.0;
+
+                const yM_idx = y > 1 ? y - 1 : 1;
+                const yP_idx = y < ny - 2 ? y + 1 : ny - 2;
+                const dyDist = (y === 1 || y === ny - 2) ? 1.0 : 2.0;
+
+                const dUy_dx = (uy[zOff + y * nx + xP] - uy[zOff + y * nx + xM]) / dxDist;
+                const dUx_dy = (ux[zOff + yP_idx * nx + x] - ux[zOff + yM_idx * nx + x]) / dyDist;
+                curl_out[i] = dUy_dx - dUx_dy;
+            }
+        }
+
         if (activeCells > 0) {
             this.stats.avgTau = sumTau / activeCells;
             this.stats.avgRho = sumRho / activeCells;
@@ -238,8 +259,8 @@ export class OceanEngine implements IHypercubeEngine {
     }
 
     private stepBio(faces: Float32Array[], nx: number, ny: number, lz: number): void {
-        const bio = faces[21];
-        const bio_next = faces[17];
+        const bio = faces[23];
+        const bio_next = faces[24];
         const zOff = lz * ny * nx;
 
         for (let y = 1; y < ny - 1; y++) {

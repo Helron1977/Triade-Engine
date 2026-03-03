@@ -145,9 +145,9 @@ export class HeatmapEngine implements IHypercubeEngine {
     }
 
     compute(faces: Float32Array[], nx: number, ny: number, nz: number): void {
-        const face2 = faces[1]; // Contexte Binaire d'entrée
-        const face3 = faces[2]; // Synthèse de Diffusion
-        const face5 = faces[4]; // Cheat-code O(1) SAT
+        const face1 = faces[0]; // Input Source Map
+        const face3 = faces[2]; // Synthesis Output
+        const face5 = faces[4]; // Internal SAT Buffer
 
         // Clear pass CPU
         if (face5) face5.fill(0);
@@ -159,7 +159,7 @@ export class HeatmapEngine implements IHypercubeEngine {
             for (let y = 0; y < ny; y++) {
                 for (let x = 0; x < nx; x++) {
                     const idx = zOff + y * nx + x;
-                    const val = face2[idx];
+                    const val = face1[idx];
                     const top = y > 0 ? face5[zOff + (y - 1) * nx + x] : 0;
                     const left = x > 0 ? face5[zOff + y * nx + (x - 1)] : 0;
                     const topLeft = (y > 0 && x > 0) ? face5[zOff + (y - 1) * nx + (x - 1)] : 0;
@@ -208,8 +208,8 @@ export class HeatmapEngine implements IHypercubeEngine {
             @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
             @group(0) @binding(1) var<uniform> config: Uniforms;
 
-            // Face 2: Input, Face 5: SAT, Face 3: Output
-            const FACE_IN = 1u;
+            // Face 0: Input, Face 4: SAT, Face 2: Output
+            const FACE_IN = 0u;
             const FACE_SAT = 4u;
             const FACE_OUT = 2u;
 
