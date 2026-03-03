@@ -11,11 +11,11 @@ async function init() {
     // Face 2: Blur output
     const grid = await HypercubeGrid.create(1, 1, SIZE, master, () => new HeatmapEngine(10, 0.1), 3);
 
-    const chunk = grid.cubes[0][0];
+    const chunk = grid.cubes[0][0]!;
     const faces = chunk.faces;
 
-    const loop = () => {
-        grid.compute();
+    const loop = async () => {
+        await grid.compute();
 
         // WOW: Professional 'plasma' colormap for thermal rendering
         HypercubeViz.quickRender(canvas, chunk, 2, 'plasma');

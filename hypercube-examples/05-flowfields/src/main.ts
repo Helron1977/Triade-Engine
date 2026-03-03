@@ -9,17 +9,18 @@ async function init() {
     // Massive Pathfinding Flowfield (V3/V4 optimized)
     const grid = await HypercubeGrid.create(1, 1, SIZE, master, () => new FlowFieldEngine(), 12);
 
-    const chunk = grid.cubes[0][0];
+    const chunk = grid.cubes[0][0]!;
     const engine = chunk.engine as FlowFieldEngine;
 
     // Set a target in the bottom-right
     engine.setTarget(SIZE - 20, SIZE - 20);
 
-    const loop = () => {
-        grid.compute();
+    const loop = async () => {
+        await grid.compute();
 
-        // WOW: Plasma colormap for distance potential field
-        HypercubeViz.quickRender(canvas, chunk, 0, 'plasma');
+        // Render Distance Potential Field (Face 0)
+        // Using high contrast "plasma" or simple intensity for demonstration
+        HypercubeViz.quickRender(canvas, chunk, 0, 'viridis');
 
         requestAnimationFrame(loop);
     };

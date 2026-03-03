@@ -9,7 +9,7 @@ async function init() {
     // Aerodynamics Wind Tunnel (LBM engine with obstacles)
     const grid = await HypercubeGrid.create(1, 1, SIZE, master, () => new OceanEngine(), 23);
 
-    const chunk = grid.cubes[0][0];
+    const chunk = grid.cubes[0][0]!;
     const engine = chunk.engine as OceanEngine;
     const faces = chunk.faces;
 
@@ -24,11 +24,11 @@ async function init() {
         }
     }
 
-    const loop = () => {
+    const loop = async () => {
         // Add constant wind from left
         engine.addGlobalCurrent(faces, 0.12, 0.0);
 
-        grid.compute();
+        await grid.compute();
 
         // WOW: Heat colormap for Velocity Magnitude (extracted from Face 18/19 internally by engine or via Viz)
         // Let's use Face 21 (Curl) for the wind tunnel aesthetic

@@ -24,8 +24,8 @@ async function init() {
         if (Math.random() > 0.99) faces[1][i] = 2; // Herbivores
     }
 
-    const loop = () => {
-        grid.compute();
+    const loop = async () => {
+        await grid.compute();
 
         // WOW: Effortless professional visualization with Viridis colormap
         // Rendering Face 2 (Organic Density)
