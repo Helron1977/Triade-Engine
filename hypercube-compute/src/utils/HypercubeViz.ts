@@ -123,7 +123,8 @@ export class HypercubeViz {
         data: Float32Array,
         width: number,
         height: number,
-        colors: 'green' | 'heat' | 'grayscale' | 'viridis' | 'plasma' = 'green'
+        colors: 'green' | 'heat' | 'grayscale' | 'viridis' | 'plasma' | 'magma' = 'green',
+        normalize: boolean = true
     ): void {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -136,20 +137,31 @@ export class HypercubeViz {
         const imgData = ctx.createImageData(width, height);
         const buf = new Uint32Array(imgData.data.buffer);
 
+        let maxVal = 1.0;
+        if (normalize) {
+            maxVal = 0.0001;
+            for (let i = 0; i < data.length; i++) {
+                if (data[i] > maxVal) maxVal = data[i];
+            }
+        }
+
         for (let i = 0; i < data.length; i++) {
-            const v = Math.max(0, Math.min(1, data[i])); // Clamp 0..1
+            const v = Math.max(0, Math.min(1, data[i] / maxVal)); // Normalized 0..1
 
             if (colors === 'viridis') {
-                // Simplified Viridis: Purple -> Blue -> Green -> Yellow
                 const r = Math.floor(v * v * 255);
                 const g = Math.floor(v * 255);
                 const b = Math.floor((1 - v) * 128 + v * 32);
                 buf[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
             } else if (colors === 'plasma') {
-                // Simplified Plasma: Blue -> Pink -> Yellow
                 const r = Math.floor(v * 255);
                 const g = Math.floor(Math.pow(v, 3) * 255);
                 const b = Math.floor((1 - v) * 255);
+                buf[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
+            } else if (colors === 'magma') {
+                const r = Math.floor(v * 255);
+                const g = Math.floor(Math.pow(v, 2) * 200);
+                const b = Math.floor(Math.pow(v, 4) * 100);
                 buf[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
             } else if (colors === 'green') {
                 const l = Math.floor(v * 255);
@@ -167,10 +179,16 @@ export class HypercubeViz {
     }
 
     /**
-     * Extremely simple one-liner to see the state of a face.
-     * Default colormap is 'green' but can be 'viridis' for extra "WOW".
+     * Extremely simple one-liner to see the state of a chunk's face.
+     * Automatically extracts dimensions from the chunk.
      */
-    static quickRender(canvas: HTMLCanvasElement, data: Float32Array, size: number, colormap: 'green' | 'viridis' | 'plasma' = 'green'): void {
-        this.renderToCanvas(canvas, data, size, size, colormap);
+    static quickRender(
+        canvas: HTMLCanvasElement,
+        chunk: HypercubeChunk,
+        faceIndex: number = 0,
+        colormap: 'green' | 'viridis' | 'plasma' | 'magma' = 'viridis'
+    ): void {
+        const faceData = chunk.faces[faceIndex];
+        this.renderToCanvas(canvas, faceData, chunk.nx, chunk.ny, colormap, true);
     }
 }
