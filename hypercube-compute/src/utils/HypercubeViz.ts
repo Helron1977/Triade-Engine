@@ -116,9 +116,15 @@ export class HypercubeViz {
     }
     /**
      * Renders a 2D Float32Array face directly to an HTML5 Canvas.
-     * Uses an optimized 32-bit pixel buffer for maximum performance.
+     * Uses an optimized 32-bit pixel buffer and supports premium colormaps.
      */
-    static renderToCanvas(canvas: HTMLCanvasElement, data: Float32Array, width: number, height: number, colors: 'green' | 'heat' | 'grayscale' = 'green'): void {
+    static renderToCanvas(
+        canvas: HTMLCanvasElement,
+        data: Float32Array,
+        width: number,
+        height: number,
+        colors: 'green' | 'heat' | 'grayscale' | 'viridis' | 'plasma' = 'green'
+    ): void {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
@@ -133,9 +139,21 @@ export class HypercubeViz {
         for (let i = 0; i < data.length; i++) {
             const v = Math.max(0, Math.min(1, data[i])); // Clamp 0..1
 
-            if (colors === 'green') {
+            if (colors === 'viridis') {
+                // Simplified Viridis: Purple -> Blue -> Green -> Yellow
+                const r = Math.floor(v * v * 255);
+                const g = Math.floor(v * 255);
+                const b = Math.floor((1 - v) * 128 + v * 32);
+                buf[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
+            } else if (colors === 'plasma') {
+                // Simplified Plasma: Blue -> Pink -> Yellow
+                const r = Math.floor(v * 255);
+                const g = Math.floor(Math.pow(v, 3) * 255);
+                const b = Math.floor((1 - v) * 255);
+                buf[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
+            } else if (colors === 'green') {
                 const l = Math.floor(v * 255);
-                buf[i] = 0xFF000000 | (0 << 16) | (l << 8) | 0; // Green gradient
+                buf[i] = 0xFF000000 | (0 << 16) | (l << 8) | 0;
             } else if (colors === 'heat') {
                 const r = Math.floor(v * 255);
                 const g = Math.floor(Math.max(0, v - 0.5) * 510);
@@ -150,9 +168,9 @@ export class HypercubeViz {
 
     /**
      * Extremely simple one-liner to see the state of a face.
-     * Use this for quick debugging or the 20-line Quick Start.
+     * Default colormap is 'green' but can be 'viridis' for extra "WOW".
      */
-    static quickRender(canvas: HTMLCanvasElement, data: Float32Array, size: number): void {
-        this.renderToCanvas(canvas, data, size, size, 'green');
+    static quickRender(canvas: HTMLCanvasElement, data: Float32Array, size: number, colormap: 'green' | 'viridis' | 'plasma' = 'green'): void {
+        this.renderToCanvas(canvas, data, size, size, colormap);
     }
 }

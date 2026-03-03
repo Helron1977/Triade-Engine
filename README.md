@@ -21,32 +21,29 @@ By structuring state as mathematical tensors ("faces" of a cube) rather than dis
 - Memory allocations during the computing loops are exactly **0**.
 - Multi-threading (via Web Workers & `SharedArrayBuffer`) and **WebGPU hardware acceleration** become trivial because all data is already in a raw binary buffer format.
 
-If you are trying to implement **Cellular Automata, Fluid Dynamics (LBM), Heat Diffusion, or massive procedurally generated ecosystems** in JavaScript without resorting to C++ WebAssembly, Hypercube provides the high-performance memory layout you need.
-
 ---
 
-## 🚀 Native 3D Compute (NEW in V4)
+## 🚀 V4 – 3D is here (Alpha)
 
-V4 introduces native 3D tensor support, allowing simulations to scale across `[nx, ny, nz]` dimensions while maintaining O(1) complexity.
+V4 marks a major leap from 2D grids to **native 3D volumetric compute**.
 
-### 🔥 Volume Diffusion Engine
-A specialized 3D solver with a 7-point stencil and periodic boundaries. 
-- **Hybrid Compute**: Support for both CPU (multithreaded) and **WebGPU hardware acceleration**.
-- **Dynamic Limits**: Adapts workgroup sizes (256 to 1024 threads) based on the physical GPU adapter limits.
-- **Applications**: Smoke, heat, chemical concentration, volumetric fog.
-- **Performance**: 64³ grid (262k voxels) processed in ~3ms on CPU and <1ms on GPU (compute only). 128³ grid remains playable at 60 FPS on compatible hardware.
+👉 **[Launch the 3D Volume Demo](https://helron1977.github.io/Hypercube-Compute/)** - See a volumetric blob diffuse and intersect in real-time.
 
-### 🎨 Visualization Helpers
-- **IsoRenderer**: 2.5D Isometric projection on Canvas 2D with depth sorting.
-- **MarchingCubes (Light)**: High-speed surface extraction for volumetric data.
-- **ThreeJS Bridge**: Easy export to `THREE.Data3DTexture` and `BufferGeometry`.
+![3D Volume Diffusion](https://raw.githubusercontent.com/Helron1977/Hypercube-Compute/main/docs/assets/3d_diffusion.gif)
+*3D Heat Diffusion with Isosurface extraction at 60 FPS.*
+
+### 🔥 New in V4
+- **VolumeDiffusionEngine**: A specialized 3D solver with a 7-point stencil.
+- **IsoRenderer**: A 2.5D Isometric visualization layer for 3D tensors.
+- **Hybrid GPU**: Dynamic WebGPU/CPU switching for 3D workloads.
+- **MarchingCubes**: High-speed mesh extraction for volumetric surfaces.
 
 ---
 
 ## 🏗 Architecture Overview
 ```mermaid
 ---
-title: Hypercube Architecture - Contiguous O(1) Memory
+title: Hypercube Architecture Overview
 ---
 graph TD
     A[HypercubeMasterBuffer<br>Raw ArrayBuffer] -->|Partitions| B(HypercubeGrid)
@@ -73,19 +70,11 @@ Hypercube comes out of the box with highly optimized, pre-built physics engines.
 ### 💨 Aerodynamics Engine (Lattice Boltzmann D2Q9)
 A fully continuous computational fluid dynamics solver. 
 
-**WEBGPU Performance**: The LBM engine is fully ported to WGSL, capable of 60 FPS simulations with complex vorticity calculations entirely on the GPU.
-
 ![Vortex LBM WebGPU](https://raw.githubusercontent.com/Helron1977/Hypercube-Compute/main/docs/assets/webgpu_vortex.png)
 *Real-time fluid vorticity calculated at 60 FPS via WebGPU.*
 
 ### 🌊 Ocean Simulator
 An open-world toric-bounded oceanic current simulator powered by the D2Q9 LBM Engine.
-
-### 🗺️ Flow-Field Engine (V3)
-A massive crowd pathfinding engine guiding 10,000+ agents to a target simultaneously via WebGPU parallel scan.
-
-### 🧬 GameOfLife Ecosystem (O1 Tile)
-Un automate cellulaire repensé en **écosystème organique cyclique**.
 
 ---
 
@@ -104,29 +93,33 @@ const grid = await HypercubeGrid.create(1, 1, 128, master, () => new GameOfLifeE
 const loop = () => {
     grid.compute(); // Process tensor logic O(1)
     
-    // 3. Render directly (Face 2 = Organic Density/Age)
+    // 3. Render directly using the 'viridis' colormap (Face 2 = Density/Age)
     const faceData = grid.cubes[0][0].faces[2]; 
-    HypercubeViz.quickRender(canvas, faceData, 128); // Plug & Play!
+    HypercubeViz.quickRender(canvas, faceData, 128, 'viridis'); // Plug & Play!
     
     requestAnimationFrame(loop);
 };
 loop();
 ```
 
-### 💨 Want Fluid? (Ocean Engine)
-To see vortices instead of cells, use the **Ocean Engine**:
+### 🌪️ Fluid Quick-Start (Ocean Engine)
+Want to see vortices instead? Here is the most asked snippet (25 lines):
 ```typescript
+import { HypercubeGrid, HypercubeMasterBuffer, OceanEngine, HypercubeViz } from 'hypercube-compute';
+
+const master = new HypercubeMasterBuffer();
 const grid = await HypercubeGrid.create(1, 1, 256, master, () => new OceanEngine(), 23);
 
-const loop = () => {
-    // Sync all LBM populations (Faces 0-8)
-    grid.compute([0, 1, 2, 3, 4, 5, 6, 7, 8]); 
+const canvas = document.querySelector('canvas')!;
+const loop = async () => {
+    grid.compute([0, 1, 2, 3, 4, 5, 6, 7, 8]); // Sync LBM populations
 
     const curl = grid.cubes[0][0].faces[21]; // Vorticity/Rotation
     HypercubeViz.renderToCanvas(canvas, curl, 256, 256, 'heat');
     
     requestAnimationFrame(loop);
 };
+loop();
 ```
 
 ---
@@ -143,7 +136,8 @@ Hypercube uses **Faces** (tensor layers) instead of objects.
 | **Ocean/LBM** | `18` | `chunk.faces[18]` | **Velocity X** (Horizontal current) |
 | | `21` | `chunk.faces[21]` | **Curl/Vorticity** (Rotation/Eddies of the fluid) |
 | | `22` | `chunk.faces[22]` | **Obstacles** (1.0 = Wall, 0.0 = Fluid) |
-| **Vol. Diffusion** | `0` | `chunk.faces[0]` | **Input Concentration** (3D Grid) |
+| **Vol. Diffusion** | `0` | `chunk.faces[0]` | **Density t** (Input/Current state) |
+| | `1` | `chunk.faces[1]` | **Density t+1** (Output/Next state) |
 
 ---
 
@@ -163,6 +157,7 @@ canvas.onmousemove = (e) => {
     engine.addVortex(grid.cubes[0][0].faces, e.offsetX, e.offsetY, 15.0); 
 };
 ```
+
 
 ---
 
