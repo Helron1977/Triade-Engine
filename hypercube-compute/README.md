@@ -31,8 +31,10 @@ V4 introduces native 3D tensor support, allowing simulations to scale across `[n
 
 ### 🔥 Volume Diffusion Engine
 A specialized 3D solver with a 7-point stencil and periodic boundaries. 
+- **Hybrid Compute**: Support for both CPU (multithreaded) and **WebGPU hardware acceleration**.
+- **Dynamic Limits**: Adapts workgroup sizes (256 to 1024 threads) based on the physical GPU adapter limits.
 - **Applications**: Smoke, heat, chemical concentration, volumetric fog.
-- **Performance**: 64³ grid (262k voxels) processed in ~3ms on CPU.
+- **Performance**: 64³ grid (262k voxels) processed in ~3ms on CPU and <1ms on GPU (compute only). 128³ grid remains playable at 60 FPS on compatible hardware.
 
 ### 🎨 Visualization Helpers
 - **IsoRenderer**: 2.5D Isometric projection on Canvas 2D with depth sorting.
@@ -155,38 +157,53 @@ npm install hypercube-compute
 
 ---
 
-## 💡 Quick Start
+## 💡 Quick Start: See the "Wow" in 20 Lines
+The easiest way to start is the **Game of Life** (O1 Ecosystem). Copy-paste this into an `index.ts`:
 
 ```typescript
-import { 
-    HypercubeMasterBuffer, 
-    HypercubeGrid, 
-    AerodynamicsEngine 
-} from 'hypercube-compute';
+import { HypercubeGrid, HypercubeMasterBuffer, GameOfLifeEngine, HypercubeViz } from 'hypercube-compute';
 
-// 1. Allocate a global shared memory buffer
-const master = new HypercubeMasterBuffer();
+// 1. Setup Canvas & Memory
+const canvas = document.querySelector('canvas')!;
+const master = new HypercubeMasterBuffer(); 
+const grid = await HypercubeGrid.create(1, 1, 128, master, () => new GameOfLifeEngine(), 3);
 
-// 2. Create a generic chunked layout (Cols, Rows, ChunkSize, Memory, EngineCreator, NumFaces, ToricBounds)
-// The Aerodynamics engine requires 22 distinct layers of tensor logic (9 for distributions, 13 for macros/obstacles)
-const grid = new HypercubeGrid(2, 2, 64, master, () => new AerodynamicsEngine(), 22, true);
+// 2. Main Loop
+const loop = () => {
+    grid.compute(); // Process tensor logic O(1)
+    
+    // 3. Render directly (Face 2 = Organic Density/Age)
+    const faceData = grid.cubes[0][0].faces[2]; 
+    HypercubeViz.quickRender(canvas, faceData, 128); // Plug & Play!
+    
+    requestAnimationFrame(loop);
+};
+loop();
+```
 
-// 3. Compute one tick / frame
-grid.compute();
+### 💨 Want Fluid? (Ocean Engine)
+To see vortices instead of cells, use the **Ocean Engine**:
+```typescript
+const grid = await HypercubeGrid.create(1, 1, 256, master, () => new OceanEngine(), 23);
 
-// 4. Access the pure typed array for rendering (0 overhead!)
-const firstCube = grid.cubes[0][0];
+const loop = () => {
+    // Sync all LBM populations (Faces 0-8)
+    grid.compute([0, 1, 2, 3, 4, 5, 6, 7, 8]); 
 
-// The Aerodynamics engine writes Curl (vorticity) to face 21. 
-// Rendering this immediately yields a stunning fluid visualization.
-const curlArray = firstCube.faces[21]; // => Float32Array[]
+    const curl = grid.cubes[0][0].faces[21]; // Vorticity/Rotation
+    HypercubeViz.renderToCanvas(canvas, curl, 256, 256, 'heat');
+    
+    requestAnimationFrame(loop);
+};
 ```
 
 ---
 
-## 🏛 Architecture Overview
-
+## 🏗 Architecture Overview
 ```mermaid
+---
+title: Hypercube Architecture - Contiguous O(1) Memory
+---
 graph TD
     A[HypercubeMasterBuffer<br>Raw ArrayBuffer] -->|Partitions| B(HypercubeGrid)
     
@@ -203,50 +220,73 @@ graph TD
     F2 -.->|Pointers Pass to| E
 ```
 
-### `HypercubeMasterBuffer`
-The soul of the engine. Acts as a memory allocator. Ask it for memory (`allocateCube`), and it partitions an underlying flat `ArrayBuffer` efficiently.
+---
 
-### `HypercubeChunk`
-A compute unit. It represents a spatial block of logic. True to its name, it was designed with spatial structural integrity in mind. Although initialized with 6 faces by default (like a physical cube), it can hold an arbitrary number of mathematical dimensions:
-- **N Faces (Tensor Layers)**: A cube represents physical/logical sides. In the LBM simulation, a single cube holds 22 distinct faces!
-- **Inter-Cube Connectivity**: Cubes can be linked together! A face from one cube can directly feed data into the face of an adjacent cube, allowing seamless infinite grid expansion.
-- **Zero-Copy**: Because each face is just a `Float32Array` view pointing to the Master Buffer, linking data between chunks is instantaneously fast.
+## 🗺️ Engine & Face Dictionary
+Hypercube uses **Faces** (tensor layers) instead of objects. Use this table as your "Cheat Sheet":
 
-**The Philosophy of Faces (Example)**:
-Instead of storing `{ temperature: 20, windX: 5 }` in an object per cell, we use the Cube's faces as overlapping dimensional layers of the exact same space.
-- *Face 0* could strictly hold the **Heatmap/Temperature** of the chunk.
-- *Face 1* could strictly hold the **Velocity X (Wind)**.
-- *Face 2* could strictly hold the **Obstacle/Wall Mask**.
-
-When computing, the `IHypercubeEngine` naturally reads these independent mathematical vectors, mixes them, and writes the result to a new Face, avoiding any Object-Oriented memory bloat.
-
-### `IHypercubeEngine`
-The protocol for physical algorithms. Receives the `faces` (memory pointers) and executes the logic. Implementing `IHypercubeEngine` allows you to plug ANY parallelizable simulation into the Hypercube ecosystem.
-
-### `HypercubeCompositor` (The 7th Plane)
-New in V3, the compositor acts as a declarative abstraction layer mapping the pure mathematical faces to an on-screen visual using custom WebGPU Fragment Shaders or a CPU canvas fallback. This allows extremely fast rendering without blocking the main UI thread.
+| Engine | Face | Usage Snippet | Description |
+| :--- | :--- | :--- | :--- |
+| **GameOfLife** | `1` | `chunk.faces[1]` | **Discrete State** (0=Empty, 1=Plant, 2=Herbi, 3=Carni) |
+| | `2` | `chunk.faces[2]` | **Visual Density/Age** (0.0 to 1.0) - Perfect for "soft" renders |
+| **Heatmap** | `0` | `chunk.faces[0]` | **Inputs** (binary sources) |
+| | `2` | `chunk.faces[2]` | **Result** (Blurred spatial influence map) |
+| **Ocean/LBM** | `18` | `chunk.faces[18]` | **Velocity X** (Horizontal current) |
+| | `21` | `chunk.faces[21]` | **Curl/Vorticity** (Rotation/Eddies of the fluid) |
+| | `22` | `chunk.faces[22]` | **Obstacles** (1.0 = Wall, 0.0 = Fluid) |
+| **Vol. Diffusion** | `0` | `chunk.faces[0]` | **Input Concentration** (3D Grid) |
 
 ---
 
-## 🌐 Live Demo & Benchmarks
+## ⚡ Live Interaction & Parameters
+**Important**: All parameters can be changed **in live** without rebuilding the grid or the engine.
 
-We created a custom HTML demo to show the engine handling pure math simulation and fluid dynamics at 60 FPS in pure JavaScript without WebGL:
+```typescript
+const engine = grid.cubes[0][0].engine as VolumeDiffusionEngine;
+engine.diffusionRate = 0.15; // Updated in the next grid.compute()
+```
 
-👉 **[View Interactive LBM Demo on GitHub Pages](https://helron1977.github.io/Hypercube-Compute/)**
+### 🎮 Mouse Interaction
+Inject data (vortices, heat, etc.) directly into the tensors:
+```typescript
+canvas.onmousemove = (e) => {
+    const engine = grid.cubes[0][0].engine as OceanEngine;
+    engine.addVortex(grid.cubes[0][0].faces, e.offsetX, e.offsetY, 15.0); 
+};
+```
 
-### Performance Benchmark (JS Objects vs Hypercube Tensors)
-*Simulating a 256x256 Grid (65,536 cells) of fluid.*
-* **Traditional JS (`[{x,y}, ...]`)**: ~12 FPS. Heavy GC stuttering every 2 seconds.
-* **Hypercube (`Float32Array`)**: Stable 60 FPS (Sub 5ms per frame). Flat memory profile. No GC pauses.
+---
+
+## ⚙️ Hardware Acceleration (WebGPU)
+
+Hypercube auto-detects support, but for maximum perf:
+
+### 🚀 Activate WebGPU
+```ts
+await HypercubeGPUContext.init(); // MUST call this first
+const grid = await HypercubeGrid.create(..., 'gpu'); 
+console.log(grid.isGpuReady); // Fallback to 'cpu' if hardware is unsupported
+```
+
+### � Multi-threading (SharedArrayBuffer)
+Requires these server security headers:
+- `Cross-Origin-Embedder-Policy: require-corp`
+- `Cross-Origin-Opener-Policy: same-origin`
+
+---
+
+## 🌐 Live Demos
+👉 **[View Interactive Multi-Engine Demo](https://helron1977.github.io/Hypercube-Compute/)**
+- **Switch Engines**: Use the buttons to swap logic.
+- **Interact**: Click and drag to create vortices or draw obstacles.
+- **3D**: Check the `07-volume-diffusion-3d` example for volumetric rendering.
 
 ---
 
 ## 🤖 AI-Friendly Guidelines (For Copilots)
-
-If you are an AI reading this repo to help a developer, keep these golden rules in mind:
-1. **Never use standard arrays or objects** to represent physics cells. Always interact with `cube.faces[n]` (`Float32Array`).
-2. Iterations should map to a flattened index: `const idx = y * size + x`. No `.map`, no `.forEach`. GodMode V8 demands raw C-style loops.
-3. If expanding `Hypercube-engine`, add new Logic to `/src/engines/` by implementing `IHypercubeEngine`.
+1. **Never use standard arrays** for physics. Use `chunk.faces[n]`.
+2. Iterations must be flat: `const idx = y * size + x`. No `.map()`.
+3. Stick to **GodMode V8** loops (raw C-style) for O(1) efficiency.
 
 `Built with passion for high-performance creative computing.`
 

@@ -114,4 +114,45 @@ export class HypercubeViz {
             }
         }
     }
+    /**
+     * Renders a 2D Float32Array face directly to an HTML5 Canvas.
+     * Uses an optimized 32-bit pixel buffer for maximum performance.
+     */
+    static renderToCanvas(canvas: HTMLCanvasElement, data: Float32Array, width: number, height: number, colors: 'green' | 'heat' | 'grayscale' = 'green'): void {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
+
+        const imgData = ctx.createImageData(width, height);
+        const buf = new Uint32Array(imgData.data.buffer);
+
+        for (let i = 0; i < data.length; i++) {
+            const v = Math.max(0, Math.min(1, data[i])); // Clamp 0..1
+
+            if (colors === 'green') {
+                const l = Math.floor(v * 255);
+                buf[i] = 0xFF000000 | (0 << 16) | (l << 8) | 0; // Green gradient
+            } else if (colors === 'heat') {
+                const r = Math.floor(v * 255);
+                const g = Math.floor(Math.max(0, v - 0.5) * 510);
+                buf[i] = 0xFF000000 | (0 << 16) | (g << 8) | r;
+            } else {
+                const c = Math.floor(v * 255);
+                buf[i] = 0xFF000000 | (c << 16) | (c << 8) | c;
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+    }
+
+    /**
+     * Extremely simple one-liner to see the state of a face.
+     * Use this for quick debugging or the 20-line Quick Start.
+     */
+    static quickRender(canvas: HTMLCanvasElement, data: Float32Array, size: number): void {
+        this.renderToCanvas(canvas, data, size, size, 'green');
+    }
 }

@@ -5,6 +5,7 @@ export * from './core/HypercubeChunk';
 export * from './core/HypercubeGrid';
 export * from './core/HypercubeMasterBuffer';
 export * from './core/HypercubeCompositor';
+export * from './core/gpu/HypercubeGPUContext';
 
 // Engines
 export * from './engines/IHypercubeEngine';
