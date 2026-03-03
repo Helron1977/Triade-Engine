@@ -11,7 +11,15 @@ describe('Game Of Life Ecosystem (New Rules)', () => {
         const numFaces = 6;
         const masterBuffer = new HypercubeMasterBuffer(totalCellsStrided * numFaces * 4);
 
-        const engine = new GameOfLifeEngine();
+        const engine = new GameOfLifeEngine({
+            deathProb: 0.015,
+            growthProb: 0.03,
+            eatThresholdBase: 3.5,
+            plantEatThreshold: 2.8,
+            herbiEatThreshold: 3.8,
+            carniEatThreshold: 3.2,
+            carniStarveThreshold: 3.5
+        });
 
         // --- 1. SETUP ENGINE (CPU MODE) ---
         const grid = await HypercubeGrid.create(

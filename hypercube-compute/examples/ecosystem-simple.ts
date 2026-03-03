@@ -9,7 +9,15 @@ async function runEcosystemDemo() {
     const masterBuffer = new HypercubeMasterBuffer(mapSize * mapSize * 12 * 4);
 
     // 1. Initialiser le GameOfLifeEngine (Écosystème)
-    const ecosystemEngine = new GameOfLifeEngine();
+    const ecosystemEngine = new GameOfLifeEngine({
+        deathProb: 0.015,
+        growthProb: 0.03,
+        eatThresholdBase: 3.5,
+        plantEatThreshold: 2.8,
+        herbiEatThreshold: 3.8,
+        carniEatThreshold: 3.2,
+        carniStarveThreshold: 3.5
+    });
     const gridEco = await HypercubeGrid.create(
         1, 1, mapSize, masterBuffer,
         () => ecosystemEngine,

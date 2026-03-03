@@ -118,6 +118,7 @@ export class HypercubeChunk {
         if (!this.gpuBuffer) return;
 
         const totalSize = this.faces.length * this.stride;
+
         HypercubeGPUContext.device.queue.writeBuffer(
             this.gpuBuffer,
             0,
