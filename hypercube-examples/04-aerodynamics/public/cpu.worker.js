@@ -747,49 +747,48 @@ var FluidEngine = class {
 var AerodynamicsEngine = class {
   dragScore = 0;
   initialized = false;
-  isLeftBoundary = true;
-  interaction = { mouseX: 0, mouseY: 0, active: false };
-  lastNx = 256;
-  lastNy = 256;
+  targetX = -100;
+  targetY = -100;
+  radius = 14;
+  weight = 0;
+  // used as active flag > 0
+  // Constants
+  w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36];
+  cx = [0, 1, 0, -1, 0, 1, -1, -1, 1];
+  cy = [0, 0, 1, 0, -1, 1, 1, -1, -1];
+  opp = [0, 3, 4, 1, 2, 7, 8, 5, 6];
+  // Params
+  u0 = 0.08;
+  omega = 1.95;
+  smagorinsky = 0.15;
+  tau_0;
   // WebGPU Attributes
   pipelineLBM = null;
   pipelineVorticity = null;
   bindGroup = null;
   uniformBuffer = null;
+  stats = { avgRho: 1 };
+  constructor() {
+    this.tau_0 = 1 / this.omega;
+  }
   get name() {
-    return "Lattice Boltzmann D2Q9 (O(1))";
+    return "Aerodynamics LBM D2Q9 (O(1))";
   }
   getRequiredFaces() {
     return 23;
   }
   getSyncFaces() {
-    return [0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 19, 20, 22];
+    return [0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 19, 20];
   }
-  /**
-   * Initialisation WebGPU : Prépare les pipelines et les bindings.
-   */
-  /**
-   * Initialisation spécifique au GPU. Prépare les pipelines et les bindings.
-   */
   initGPU(device, cubeBuffer, stride, nx, ny, nz) {
     const shaderModule = device.createShaderModule({ code: this.wgslSource });
     const bindGroupLayout = device.createBindGroupLayout({
       entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: "storage" }
-        },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: "uniform" }
-        }
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } }
       ]
     });
-    const pipelineLayout = device.createPipelineLayout({
-      bindGroupLayouts: [bindGroupLayout]
-    });
+    const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
     this.pipelineLBM = device.createComputePipeline({
       layout: pipelineLayout,
       compute: { module: shaderModule, entryPoint: "compute_lbm" }
@@ -800,19 +799,9 @@ var AerodynamicsEngine = class {
     });
     this.uniformBuffer = device.createBuffer({
       size: 32,
-      // 5 * 4 bytes = 20, aligned to 32
+      // bytes: mapSizeX, mapSizeY, stride, interaction, mx, my -> 24 bytes bounded to 32
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
-    const strideFloats = stride / 4;
-    const uniformData = new ArrayBuffer(32);
-    const u32 = new Uint32Array(uniformData);
-    const f32 = new Float32Array(uniformData);
-    u32[0] = nx;
-    f32[1] = 0.12;
-    f32[2] = 1.95;
-    u32[3] = strideFloats;
-    u32[4] = this.isLeftBoundary ? 1 : 0;
-    device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
     this.bindGroup = device.createBindGroup({
       layout: bindGroupLayout,
       entries: [
@@ -821,37 +810,18 @@ var AerodynamicsEngine = class {
       ]
     });
   }
-  /**
-   * Dispatch GPU via deux passes distinctes.
-   */
-  addGlobalCurrent(faces, targetUx, targetUy) {
-    const ux = faces[19];
-    const uy = faces[20];
-    for (let i = 0; i < ux.length; i++) {
-      ux[i] += targetUx;
-      uy[i] += targetUy;
-    }
-  }
-  addVortex(faces, mx, my, strength = 10) {
-    this.interaction.mouseX = mx;
-    this.interaction.mouseY = my;
-    this.interaction.active = true;
-    const nx = this.lastNx;
-    const ny = this.lastNy;
-    const smoke = faces[22];
-    const r = 10;
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const ix = Math.floor(mx + dx), iy = Math.floor(my + dy);
-        if (ix >= 0 && ix < nx && iy >= 0 && iy < ny) {
-          const d2 = dx * dx + dy * dy;
-          if (d2 < r * r) smoke[iy * nx + ix] = 1;
-        }
-      }
-    }
-  }
   computeGPU(device, commandEncoder, nx, ny, nz) {
-    if (!this.bindGroup || !this.pipelineLBM || !this.pipelineVorticity) return;
+    if (!this.bindGroup || !this.pipelineLBM || !this.pipelineVorticity || !this.uniformBuffer) return;
+    const uniformData = new ArrayBuffer(32);
+    const u32 = new Uint32Array(uniformData);
+    const f32 = new Float32Array(uniformData);
+    u32[0] = nx;
+    u32[1] = ny;
+    f32[2] = this.weight;
+    f32[3] = this.targetX;
+    f32[4] = this.targetY;
+    u32[5] = nx * ny;
+    device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
     const wgSize = 16;
     const wgX = Math.ceil(nx / wgSize);
     const wgY = Math.ceil(ny / wgSize);
@@ -867,148 +837,170 @@ var AerodynamicsEngine = class {
     pass2.end();
   }
   compute(faces, nx, ny, nz) {
-    this.lastNx = nx;
-    this.lastNy = ny;
-    const obstacles = faces[18];
-    const ux_out = faces[19];
-    const uy_out = faces[20];
+    const obstacles = faces[22];
+    const ux_out = faces[18];
+    const uy_out = faces[19];
+    const rho_out = faces[20];
     const curl_out = faces[21];
-    const smoke = faces[22];
-    const cx = [0, 1, 0, -1, 0, 1, -1, -1, 1];
-    const cy = [0, 0, 1, 0, -1, 1, 1, -1, -1];
-    const w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36];
-    const opp = [0, 3, 4, 1, 2, 7, 8, 5, 6];
-    const u0 = 0.12;
-    const omega = 1.95;
     if (!this.initialized) {
-      for (let idx = 0; idx < nx * ny * nz; idx++) {
-        const rho = 1;
-        const ux = u0;
-        const uy = 0;
-        const u_sq = ux * ux + uy * uy;
-        for (let i = 0; i < 9; i++) {
-          const cu = cx[i] * ux + cy[i] * uy;
-          const feq = w[i] * rho * (1 + 3 * cu + 4.5 * cu * cu - 1.5 * u_sq);
-          faces[i][idx] = feq;
-          faces[i + 9][idx] = feq;
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++) {
+          const idx = y * nx + x;
+          const rho = 1;
+          const ux = this.u0;
+          const uy = 0;
+          const u_sq = ux * ux + uy * uy;
+          for (let i = 0; i < 9; i++) {
+            const cu = 3 * (this.cx[i] * ux + this.cy[i] * uy);
+            const feq2 = this.w[i] * rho * (1 + cu + 0.5 * cu * cu - 1.5 * u_sq);
+            faces[i][idx] = feq2;
+            faces[i + 9][idx] = feq2;
+          }
         }
       }
       this.initialized = true;
     }
+    let totalRho = 0;
+    let activeCells = 0;
     let frameDrag = 0;
+    const pulled_f = new Float32Array(9);
+    const feq = new Float32Array(9);
     for (let lz = 0; lz < nz; lz++) {
       const zOff = lz * ny * nx;
       for (let y = 1; y < ny - 1; y++) {
         for (let x = 1; x < nx - 1; x++) {
           const idx = zOff + y * nx + x;
-          if (obstacles[idx] > 0) {
+          if (obstacles[idx] > 0.5) {
             ux_out[idx] = 0;
             uy_out[idx] = 0;
             continue;
           }
-          let rho = 0, ux = 0, uy = 0;
           for (let i = 0; i < 9; i++) {
-            const f_val = faces[i][idx];
-            rho += f_val;
-            ux += cx[i] * f_val;
-            uy += cy[i] * f_val;
-          }
-          if (x === 1 && this.isLeftBoundary) {
-            ux = u0 + (Math.random() - 0.5) * 1e-3;
-            uy = (Math.random() - 0.5) * 1e-3;
-            rho = 1;
-          }
-          if (rho > 0) {
-            ux /= rho;
-            uy /= rho;
-          }
-          ux_out[idx] = ux;
-          uy_out[idx] = uy;
-          const u_sq = ux * ux + uy * uy;
-          for (let i = 0; i < 9; i++) {
-            const cu = cx[i] * ux + cy[i] * uy;
-            const feq = w[i] * rho * (1 + 3 * cu + 4.5 * cu * cu - 1.5 * u_sq);
-            const f_post = faces[i][idx] * (1 - omega) + feq * omega;
-            let nnx = x + cx[i], nny = y + cy[i];
-            if (nny < 0) nny = ny - 1;
-            else if (nny >= ny) nny = 0;
-            if (nnx < 0 || nnx >= nx) continue;
-            const nIdx = zOff + nny * nx + nnx;
-            if (obstacles[nIdx] > 0) {
-              faces[opp[i] + 9][idx] = f_post;
-              frameDrag += f_post * cx[i];
+            let sx = x - this.cx[i];
+            let sy = y - this.cy[i];
+            if (sy < 1) sy = ny - 2;
+            if (sy > ny - 2) sy = 1;
+            if (sx > nx - 2) sx = nx - 2;
+            if (sx < 1) sx = 1;
+            const srcIdx = zOff + sy * nx + sx;
+            if (obstacles[srcIdx] > 0.5) {
+              pulled_f[i] = faces[this.opp[i]][idx];
+              frameDrag += faces[this.opp[i]][idx] * this.cx[i];
             } else {
-              faces[i + 9][nIdx] = f_post;
+              pulled_f[i] = faces[i][srcIdx];
             }
           }
-        }
-      }
-      for (let i = 0; i < 9; i++) {
-        const f_in = faces[i];
-        const f_out = faces[i + 9];
-        for (let y = 0; y < ny; y++) {
-          for (let x = 0; x < nx; x++) {
-            const idx = zOff + y * nx + x;
-            f_in[idx] = f_out[idx];
+          if (x === 1) {
+            const f0 = pulled_f[0], f2 = pulled_f[2], f3 = pulled_f[3];
+            const f4 = pulled_f[4], f6 = pulled_f[6], f7 = pulled_f[7];
+            const rho_zhe = (f0 + f2 + f4 + 2 * (f3 + f6 + f7)) / (1 - this.u0);
+            pulled_f[1] = f3 + 2 / 3 * rho_zhe * this.u0;
+            pulled_f[5] = f7 - 0.5 * (f2 - f4) + 1 / 6 * rho_zhe * this.u0;
+            pulled_f[8] = f6 + 0.5 * (f2 - f4) + 1 / 6 * rho_zhe * this.u0;
           }
-        }
-      }
-      for (let y = 1; y < ny - 1; y++) {
-        const yM = y - 1;
-        const yP = y + 1;
-        for (let x = 1; x < nx - 1; x++) {
-          const xM = x > 1 ? x - 1 : 1;
-          const xP = x < nx - 2 ? x + 1 : nx - 2;
-          const dxDist = x === 1 || x === nx - 2 ? 1 : 2;
-          const loc_yM = y > 1 ? y - 1 : 1;
-          const loc_yP = y < ny - 2 ? y + 1 : ny - 2;
-          const loc_dyDist = y === 1 || y === ny - 2 ? 1 : 2;
-          const dUy_dx = (uy_out[zOff + y * nx + xP] - uy_out[zOff + y * nx + xM]) / dxDist;
-          const dUx_dy = (ux_out[zOff + loc_yP * nx + x] - ux_out[zOff + loc_yM * nx + x]) / loc_dyDist;
-          curl_out[zOff + y * nx + x] = dUy_dx - dUx_dy;
+          let rho_val = 0, ux_val = 0, uy_val = 0;
+          for (let i = 0; i < 9; i++) {
+            rho_val += pulled_f[i];
+            ux_val += pulled_f[i] * this.cx[i];
+            uy_val += pulled_f[i] * this.cy[i];
+          }
+          if (rho_val > 0) {
+            ux_val /= rho_val;
+            uy_val /= rho_val;
+          } else {
+            rho_val = 1;
+          }
+          totalRho += rho_val;
+          activeCells++;
+          let Fx = 0, Fy = 0;
+          if (this.weight > 0) {
+            const dx = x - this.targetX;
+            const dy = y - this.targetY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const vr = this.radius;
+            if (dist < vr) {
+              const forceStr = 0.03 * (1 - dist / vr);
+              Fx = -dy * forceStr;
+              Fy = dx * forceStr;
+            }
+          }
+          const ux_eq = ux_val + Fx / (2 * rho_val);
+          const uy_eq = uy_val + Fy / (2 * rho_val);
+          ux_out[idx] = ux_eq;
+          uy_out[idx] = uy_eq;
+          rho_out[idx] = rho_val;
+          let Pxx = 0, Pyy = 0, Pxy = 0;
+          for (let i = 0; i < 9; i++) {
+            const cu = 3 * (this.cx[i] * ux_eq + this.cy[i] * uy_eq);
+            const u2 = ux_eq * ux_eq + uy_eq * uy_eq;
+            feq[i] = this.w[i] * rho_val * (1 + cu + 0.5 * cu * cu - 1.5 * u2);
+            const fneq = pulled_f[i] - feq[i];
+            Pxx += fneq * this.cx[i] * this.cx[i];
+            Pyy += fneq * this.cy[i] * this.cy[i];
+            Pxy += fneq * this.cx[i] * this.cy[i];
+          }
+          const S_norm = Math.sqrt(2 * (Pxx * Pxx + Pyy * Pyy + 2 * Pxy * Pxy));
+          const delta = this.tau_0 * this.tau_0 + 18 * this.smagorinsky * this.smagorinsky * S_norm;
+          const tau_eff = 0.5 * (this.tau_0 + Math.sqrt(delta));
+          const omega_eff = 1 / tau_eff;
+          for (let i = 0; i < 9; i++) {
+            let Fi = 0;
+            if (Fx !== 0 || Fy !== 0) {
+              const cu = this.cx[i] * ux_eq + this.cy[i] * uy_eq;
+              const cF = this.cx[i] * Fx + this.cy[i] * Fy;
+              const uF = ux_eq * Fx + uy_eq * Fy;
+              Fi = (1 - 0.5 * omega_eff) * this.w[i] * (3 * cF + 9 * cu * cF - 3 * uF);
+            }
+            faces[i + 9][idx] = pulled_f[i] - omega_eff * (pulled_f[i] - feq[i]) + Fi;
+          }
         }
       }
       for (let y = 1; y < ny - 1; y++) {
         for (let x = 1; x < nx - 1; x++) {
           const idx = zOff + y * nx + x;
-          if (obstacles[idx] > 0) {
-            smoke[idx] = 0;
-            continue;
-          }
-          const vx = ux_out[idx];
-          const vy = uy_out[idx];
-          const sx = x - vx;
-          const sy = y - vy;
-          const ix = Math.floor(sx), iy = Math.floor(sy);
-          if (ix >= 1 && ix < nx - 1 && iy >= 1 && iy < ny - 1) {
-            smoke[idx] = smoke[iy * nx + ix] * 0.995;
-          }
-          if (x === 1 && y > ny / 4 && y < 3 * ny / 4) {
-            smoke[idx] = 1;
-          }
+          for (let i = 0; i < 9; i++) faces[i][idx] = faces[i + 9][idx];
         }
       }
-      this.initialized = true;
+      for (let y = 1; y < ny - 1; y++) {
+        for (let x = 1; x < nx - 1; x++) {
+          const idx = zOff + y * nx + x;
+          const xM = Math.max(1, x - 1);
+          const xP = Math.min(nx - 2, x + 1);
+          const dxDist = x === 1 || x === nx - 2 ? 1 : 2;
+          const yM = Math.max(1, y - 1);
+          const yP = Math.min(ny - 2, y + 1);
+          const dyDist = y === 1 || y === ny - 2 ? 1 : 2;
+          const dUy_dx = (uy_out[zOff + y * nx + xP] - uy_out[zOff + y * nx + xM]) / dxDist;
+          const dUx_dy = (ux_out[zOff + yP * nx + x] - ux_out[zOff + yM * nx + x]) / dyDist;
+          curl_out[idx] = dUy_dx - dUx_dy;
+        }
+      }
     }
-    this.dragScore = this.dragScore * 0.95 + frameDrag * 100 / nz * 0.05;
+    this.dragScore = this.dragScore * 0.9 + frameDrag * 0.1;
+    this.stats.avgRho = activeCells > 0 ? totalRho / activeCells : 1;
   }
   get wgslSource() {
     return `
             struct Config {
-                mapSize: u32,
-                u0: f32,
-                omega: f32,
+                nx: u32,
+                ny: u32,
+                weight: f32,
+                targetX: f32,
+                targetY: f32,
                 stride: u32,
-                isLeftBoundary: u32,
             };
 
             @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
             @group(0) @binding(1) var<uniform> config: Config;
 
-            const cx: array<f32, 9> = array<f32, 9>(0.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, -1.0, 1.0);
-            const cy: array<f32, 9> = array<f32, 9>(0.0, 0.0, 1.0, 0.0, -1.0, 1.0, 1.0, -1.0, -1.0);
+            const cx: array<i32, 9> = array<i32, 9>(0, 1, 0, -1, 0, 1, -1, -1, 1);
+            const cy: array<i32, 9> = array<i32, 9>(0, 0, 1, 0, -1, 1, 1, -1, -1);
             const w: array<f32, 9> = array<f32, 9>(0.444444, 0.111111, 0.111111, 0.111111, 0.111111, 0.027777, 0.027777, 0.027777, 0.027777);
             const opp: array<u32, 9> = array<u32, 9>(0u, 3u, 4u, 1u, 2u, 7u, 8u, 5u, 6u);
+
+            const u0: f32 = 0.08;
+            const smagorinsky: f32 = 0.15;
+            const tau_0: f32 = 0.51282; // 1 / 1.95
 
             fn get_face(f: u32, id: u32) -> f32 {
                 return cube[f * config.stride + id];
@@ -1020,81 +1012,139 @@ var AerodynamicsEngine = class {
 
             @compute @workgroup_size(16, 16)
             fn compute_lbm(@builtin(global_invocation_id) id: vec3<u32>) {
-                let x = id.x;
-                let y = id.y;
-                let N = config.mapSize;
-                if (x == 0u || x >= N - 1u || y == 0u || y >= N - 1u) { return; }
-                let idx = y * N + x;
+                let x = id.x; let y = id.y;
+                let nx = config.nx; let ny = config.ny;
+                if (x == 0u || x >= nx - 1u || y == 0u || y >= ny - 1u) { return; }
+                let curr = y * nx + x;
 
-                let obs = get_face(18u, idx);
-                if (obs > 0.5) { 
-                    set_face(19u, idx, 0.0);
-                    set_face(20u, idx, 0.0);
-                    return; 
+                if (get_face(22u, curr) > 0.5) {
+                    set_face(18u, curr, 0.0);
+                    set_face(19u, curr, 0.0);
+                    return;
                 }
 
-                var rho: f32 = 0.0;
-                var ux: f32 = 0.0;
-                var uy: f32 = 0.0;
+                var pulled_f: array<f32, 9>;
+                for (var i = 0u; i < 9u; i = i + 1u) {
+                    var sx = i32(x) - cx[i];
+                    var sy = i32(y) - cy[i];
+                    
+                    if (sy < 1) { sy = i32(ny) - 2; }
+                    else if (sy > i32(ny) - 2) { sy = 1; }
+                    
+                    if (sx > i32(nx) - 2) { sx = i32(nx) - 2; } // Open boundary right
+                    
+                    if (sx < 1) { sx = 1; } // Safety for Zou-He
 
-                for(var i: u32 = 0u; i < 9u; i = i + 1u) {
-                    let f_val = get_face(i, idx);
-                    rho = rho + f_val;
-                    ux = ux + cx[i] * f_val;
-                    uy = uy + cy[i] * f_val;
-                }
+                    let srcIdx = u32(sy) * nx + u32(sx);
 
-                if (x == 1u && config.isLeftBoundary > 0u) { ux = config.u0; uy = 0.0; rho = 1.0; }
-                if (rho > 0.0) { ux = ux / rho; uy = uy / rho; }
-                set_face(19u, idx, ux);
-                set_face(20u, idx, uy);
-
-                let u_sq = ux * ux + uy * uy;
-                for(var i: u32 = 0u; i < 9u; i = i + 1u) {
-                    let cu = cx[i] * ux + cy[i] * uy;
-                    let feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sq);
-                    let f_post = get_face(i, idx) * (1.0 - config.omega) + feq * config.omega;
-
-                    var nx: i32 = i32(x) + i32(cx[i]);
-                    var ny: i32 = i32(y) + i32(cy[i]);
-                    if (ny < 0) { ny = i32(N) - 1; } else if (ny >= i32(N)) { ny = 0; }
-                    if (nx < 0 || nx >= i32(N)) { continue; }
-
-                    let n_idx = u32(ny) * N + u32(nx);
-                    if (get_face(18u, n_idx) > 0.5) {
-                        set_face(opp[i] + 9u, idx, f_post);
+                    if (get_face(22u, srcIdx) > 0.5) {
+                        pulled_f[i] = get_face(opp[i], curr);
                     } else {
-                        set_face(i + 9u, n_idx, f_post);
+                        pulled_f[i] = get_face(i, srcIdx);
                     }
+                }
+
+                if (x == 1u) {
+                    let f0 = pulled_f[0]; let f2 = pulled_f[2]; let f3 = pulled_f[3]; 
+                    let f4 = pulled_f[4]; let f6 = pulled_f[6]; let f7 = pulled_f[7];
+                    let rho_zhe = (f0 + f2 + f4 + 2.0 * (f3 + f6 + f7)) / (1.0 - u0);
+                    pulled_f[1] = f3 + (2.0 / 3.0) * rho_zhe * u0;
+                    pulled_f[5] = f7 - 0.5 * (f2 - f4) + (1.0 / 6.0) * rho_zhe * u0;
+                    pulled_f[8] = f6 + 0.5 * (f2 - f4) + (1.0 / 6.0) * rho_zhe * u0;
+                }
+
+                var rho_val = 0.0;
+                var ux_val = 0.0;
+                var uy_val = 0.0;
+                for (var i = 0u; i < 9u; i = i + 1u) {
+                    rho_val += pulled_f[i];
+                    ux_val += pulled_f[i] * f32(cx[i]);
+                    uy_val += pulled_f[i] * f32(cy[i]);
+                }
+                
+                if (rho_val > 0.0) {
+                    ux_val /= rho_val;
+                    uy_val /= rho_val;
+                } else {
+                    rho_val = 1.0;
+                }
+
+                var Fx = 0.0;
+                var Fy = 0.0;
+                if (config.weight > 0.0) {
+                    let dx = f32(x) - config.targetX;
+                    let dy = f32(y) - config.targetY;
+                    let dist = sqrt(dx*dx + dy*dy);
+                    let vr = 14.0;
+                    if (dist < vr) {
+                        let forceStr = 0.03 * (1.0 - dist / vr);
+                        Fx = -dy * forceStr;
+                        Fy = dx * forceStr;
+                    }
+                }
+
+                let ux_eq = ux_val + Fx / (2.0 * rho_val);
+                let uy_eq = uy_val + Fy / (2.0 * rho_val);
+
+                set_face(18u, curr, ux_eq);
+                set_face(19u, curr, uy_eq);
+                set_face(20u, curr, rho_val);
+
+                var feq: array<f32, 9>;
+                var Pxx = 0.0; var Pyy = 0.0; var Pxy = 0.0;
+
+                for (var i = 0u; i < 9u; i = i + 1u) {
+                    let cu = 3.0 * (f32(cx[i]) * ux_eq + f32(cy[i]) * uy_eq);
+                    let u2 = ux_eq * ux_eq + uy_eq * uy_eq;
+                    feq[i] = w[i] * rho_val * (1.0 + cu + 0.5 * cu * cu - 1.5 * u2);
+
+                    let fneq = pulled_f[i] - feq[i];
+                    Pxx += fneq * f32(cx[i] * cx[i]);
+                    Pyy += fneq * f32(cy[i] * cy[i]);
+                    Pxy += fneq * f32(cx[i] * cy[i]);
+                }
+
+                let S_norm = sqrt(2.0 * (Pxx * Pxx + Pyy * Pyy + 2.0 * Pxy * Pxy));
+                let delta = tau_0 * tau_0 + 18.0 * smagorinsky * smagorinsky * S_norm;
+                let tau_eff = 0.5 * (tau_0 + sqrt(delta));
+                let omega_eff = 1.0 / tau_eff;
+
+                for (var i = 0u; i < 9u; i = i + 1u) {
+                    var Fi = 0.0;
+                    if (Fx != 0.0 || Fy != 0.0) {
+                        let cu = f32(cx[i]) * ux_eq + f32(cy[i]) * uy_eq;
+                        let cF = f32(cx[i]) * Fx + f32(cy[i]) * Fy;
+                        let uF = ux_eq * Fx + uy_eq * Fy;
+                        Fi = (1.0 - 0.5 * omega_eff) * w[i] * (3.0 * cF + 9.0 * cu * cF - 3.0 * uF);
+                    }
+                    
+                    set_face(9u + i, curr, pulled_f[i] - omega_eff * (pulled_f[i] - feq[i]) + Fi);
                 }
             }
 
             @compute @workgroup_size(16, 16)
             fn compute_vorticity(@builtin(global_invocation_id) id: vec3<u32>) {
-                let x = id.x;
-                let y = id.y;
-                let N = config.mapSize;
-                if (x == 0u || x >= N - 1u || y == 0u || y >= N - 1u) { return; }
-                let idx = y * N + x;
+                let x = id.x; let y = id.y;
+                let nx = config.nx; let ny = config.ny;
+                if (x == 0u || x >= nx - 1u || y == 0u || y >= ny - 1u) { return; }
+                let curr = y * nx + x;
 
-                for(var i: u32 = 0u; i < 9u; i = i + 1u) {
-                    set_face(i, idx, get_face(i + 9u, idx));
+                // Sync f_post to f
+                for (var i = 0u; i < 9u; i = i + 1u) {
+                    set_face(i, curr, get_face(9u + i, curr));
                 }
 
-                let xM = max(x, 2u) - 1u;      // clamp to 1 
-                let xP = min(x + 1u, N - 2u);  // clamp to N-2
-                let yM = max(y, 2u) - 1u;
-                let yP = min(y + 1u, N - 2u);
+                let axM = max(x, 2u) - 1u;
+                let axP = min(x + 1u, nx - 2u);
+                let ayM = max(y, 2u) - 1u;
+                let ayP = min(y + 1u, ny - 2u);
 
-                var dxDist: f32 = 2.0;
-                if (x == 1u || x == N - 2u) { dxDist = 1.0; }
+                var dxDist = 2.0; if (x == 1u || x == nx - 2u) { dxDist = 1.0; }
+                var dyDist = 2.0; if (y == 1u || y == ny - 2u) { dyDist = 1.0; }
 
-                var dyDist: f32 = 2.0;
-                if (y == 1u || y == N - 2u) { dyDist = 1.0; }
-
-                let dUy_dx = (get_face(20u, y * N + xP) - get_face(20u, y * N + xM)) / dxDist;
-                let dUx_dy = (get_face(19u, yP * N + x) - get_face(19u, yM * N + x)) / dyDist;
-                set_face(21u, idx, dUy_dx - dUx_dy);
+                let dUy_dx = (get_face(19u, y * nx + axP) - get_face(19u, y * nx + axM)) / dxDist;
+                let dUx_dy = (get_face(18u, ayP * nx + x) - get_face(18u, ayM * nx + x)) / dyDist;
+                set_face(21u, curr, dUy_dx - dUx_dy);
             }
         `;
   }
