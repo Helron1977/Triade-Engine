@@ -22,6 +22,17 @@ export class FlowFieldEngine implements IHypercubeEngine {
         // isPeriodic is handled by the IHypercubeEngine interface and Grid
     }
 
+    public getConfig(): Record<string, any> {
+        return {
+            targetX: this.targetX,
+            targetY: this.targetY
+        };
+    }
+
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        // FlowFieldEngine calculates everything purely functionally in compute
+    }
+
     public setTarget(x: number, y: number): void {
         this.targetX = x;
         this.targetY = y;

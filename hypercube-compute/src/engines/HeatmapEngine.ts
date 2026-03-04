@@ -34,6 +34,17 @@ export class HeatmapEngine implements IHypercubeEngine {
         this.weight = weight;
     }
 
+    public getConfig(): Record<string, any> {
+        return {
+            radius: this.radius,
+            weight: this.weight
+        };
+    }
+
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        // Source maps are fed externally.
+    }
+
     /**
      * Initialisation spécifique au GPU. Compile les shaders et prépare le layout.
      */

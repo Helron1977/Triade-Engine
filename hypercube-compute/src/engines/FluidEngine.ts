@@ -40,6 +40,27 @@ export class FluidEngine implements IHypercubeEngine {
         public useProjection: boolean = false
     ) { }
 
+    public getConfig(): Record<string, any> {
+        return {
+            dt: this.dt,
+            buoyancy: this.buoyancy,
+            dissipation: this.dissipation,
+            velocityDissipation: this.velocityDissipation,
+            boundary: this.boundary,
+            useProjection: this.useProjection
+        };
+    }
+
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        const totalCells = nx * ny * nz;
+        if (!this.prevDensity || this.prevDensity.length !== totalCells) {
+            this.prevDensity = new Float32Array(totalCells);
+            this.prevHeat = new Float32Array(totalCells);
+            this.prevVelX = new Float32Array(totalCells);
+            this.prevVelY = new Float32Array(totalCells);
+        }
+    }
+
     /**
      * Interpole (Bilinear Sampling) une valeur sur une grille 2D
      */
@@ -90,14 +111,6 @@ export class FluidEngine implements IHypercubeEngine {
         const face5_Curl = faces[4];
 
         const totalCells = nx * ny * nz;
-
-        // Allocation Ping-Pong (Lazy init)
-        if (!this.prevDensity || this.prevDensity.length !== totalCells) {
-            this.prevDensity = new Float32Array(totalCells);
-            this.prevHeat = new Float32Array(totalCells);
-            this.prevVelX = new Float32Array(totalCells);
-            this.prevVelY = new Float32Array(totalCells);
-        }
 
         // Sauvegarde de l'état "Précédent"
         this.prevDensity!.set(face1_Density);

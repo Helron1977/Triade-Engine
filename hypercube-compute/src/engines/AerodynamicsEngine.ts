@@ -6,8 +6,11 @@ import type { IHypercubeEngine, FlatTensorView } from "./IHypercubeEngine";
  */
 export class AerodynamicsEngine implements IHypercubeEngine {
     public dragScore: number = 0;
-    private initialized: boolean = false;
     public isLeftBoundary: boolean = true;
+    public isRightBoundary: boolean = false;
+    public targetX: number = 256;
+    public targetY: number = 256;
+    public weight: number = 0.0;
     public interaction = { mouseX: 0, mouseY: 0, active: false };
     private lastNx: number = 256;
     private lastNy: number = 256;
@@ -26,16 +29,41 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         return 23; // 9(fi) + 9(f_post) + 1(obstacles) + 3(ux, uy, curl) + 1(smoke)
     }
 
+    public getConfig(): Record<string, any> {
+        return {
+            targetX: this.targetX,
+            targetY: this.targetY,
+            weight: this.weight,
+            isLeftBoundary: this.isLeftBoundary,
+            isRightBoundary: this.isRightBoundary
+        };
+    }
+
     public getSyncFaces(): number[] {
         return [0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 19, 20, 22]; // Sync LBM pops + macros + smoke
     }
 
-    /**
-     * Initialisation WebGPU : Prépare les pipelines et les bindings.
-     */
-    /**
-     * Initialisation spécifique au GPU. Prépare les pipelines et les bindings.
-     */
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        if (isWorker) return; // Do not overwrite SAB data initialized by HypercubeGrid
+
+        const cx = [0, 1, 0, -1, 0, 1, -1, -1, 1];
+        const cy = [0, 0, 1, 0, -1, 1, 1, -1, -1];
+        const w = [4.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 36.0, 1.0 / 36.0, 1.0 / 36.0, 1.0 / 36.0];
+        const u0 = 0.12;
+
+        for (let idx = 0; idx < nx * ny * nz; idx++) {
+            const rho = 1.0;
+            const ux = u0; const uy = 0.0;
+            const u_sq = ux * ux + uy * uy;
+            for (let i = 0; i < 9; i++) {
+                const cu = cx[i] * ux + cy[i] * uy;
+                const feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sq);
+                faces[i][idx] = feq;
+                faces[i + 9][idx] = feq;
+            }
+        }
+    }
+
     public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         const shaderModule = device.createShaderModule({ code: this.wgslSource });
 
@@ -69,7 +97,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         });
 
         this.uniformBuffer = device.createBuffer({
-            size: 32, // 5 * 4 bytes = 20, aligned to 32
+            size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -95,11 +123,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         });
     }
 
-    /**
-     * Dispatch GPU via deux passes distinctes.
-     */
     public addGlobalCurrent(faces: Float32Array[], targetUx: number, targetUy: number): void {
-        // Simple constant offset on velocity faces
         const ux = faces[19];
         const uy = faces[20];
         for (let i = 0; i < ux.length; i++) {
@@ -112,7 +136,6 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         this.interaction.mouseX = mx;
         this.interaction.mouseY = my;
         this.interaction.active = true;
-        // Inject smoke and a bit of momentum
         const nx = this.lastNx;
         const ny = this.lastNy;
         const smoke = faces[22];
@@ -135,14 +158,12 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         const wgX = Math.ceil(nx / wgSize);
         const wgY = Math.ceil(ny / wgSize);
 
-        // --- PASS 1: LBM Core (Collision + Streaming) ---
         const pass1 = commandEncoder.beginComputePass();
         pass1.setBindGroup(0, this.bindGroup);
         pass1.setPipeline(this.pipelineLBM);
         pass1.dispatchWorkgroups(wgX, wgY, nz);
         pass1.end();
 
-        // --- PASS 2: Vorticité (Dépend de Pass 1) ---
         const pass2 = commandEncoder.beginComputePass();
         pass2.setBindGroup(0, this.bindGroup);
         pass2.setPipeline(this.pipelineVorticity);
@@ -167,22 +188,6 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         const u0 = 0.12;
         const omega = 1.95;
 
-        // 0. INITIALISATION
-        if (!this.initialized) {
-            for (let idx = 0; idx < nx * ny * nz; idx++) {
-                const rho = 1.0;
-                const ux = u0; const uy = 0.0;
-                const u_sq = ux * ux + uy * uy;
-                for (let i = 0; i < 9; i++) {
-                    const cu = cx[i] * ux + cy[i] * uy;
-                    const feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sq);
-                    faces[i][idx] = feq;
-                    faces[i + 9][idx] = feq;
-                }
-            }
-            this.initialized = true;
-        }
-
         let frameDrag = 0;
 
         for (let lz = 0; lz < nz; lz++) {
@@ -206,7 +211,6 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                         uy += cy[i] * f_val;
                     }
 
-                    // Appliquer l'inlet sur la bordure gauche avec un petit bruit pour casser la symétrie
                     if (x === 1 && this.isLeftBoundary) {
                         ux = u0 + (Math.random() - 0.5) * 0.001;
                         uy = (Math.random() - 0.5) * 0.001;
@@ -237,11 +241,6 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                     }
                 }
             }
-
-            // 1.5 BOUNDARY CONDITIONS (Simple Bounce Back for boundaries not handled in loop)
-            // Note: In LBM, we need to ensure p_next is fully valid. 
-            // The loops 1..N-2 only stream into physical nodes.
-            // Boundaries are handled by sync faces (in multi-chunk) or here (single chunk).
 
             // 2. SWAP par couche
             for (let i = 0; i < 9; i++) {
@@ -283,7 +282,6 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                         smoke[idx] = 0;
                         continue;
                     }
-                    // Simple semi-lagrangian advection
                     const vx = ux_out[idx];
                     const vy = uy_out[idx];
                     const sx = x - vx;
@@ -291,16 +289,14 @@ export class AerodynamicsEngine implements IHypercubeEngine {
 
                     const ix = Math.floor(sx), iy = Math.floor(sy);
                     if (ix >= 1 && ix < nx - 1 && iy >= 1 && iy < ny - 1) {
-                        smoke[idx] = smoke[iy * nx + ix] * 0.995; // dissipation
+                        smoke[idx] = smoke[iy * nx + ix] * 0.995;
                     }
 
-                    // Inject constant smoke at inlet
                     if (x === 1 && y > ny / 4 && y < 3 * ny / 4) {
                         smoke[idx] = 1.0;
                     }
                 }
             }
-            this.initialized = true;
         }
 
         this.dragScore = this.dragScore * 0.95 + (frameDrag * 100 / nz) * 0.05;

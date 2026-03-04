@@ -19,6 +19,11 @@ export class HypercubeGrid {
     public readonly mode: 'cpu' | 'webgpu';
     public masterBuffer: HypercubeMasterBuffer;
 
+    public stats = {
+        computeTimeMs: 0,
+        syncTimeMs: 0
+    };
+
     private _engineFactory: () => IHypercubeEngine;
     private workerPool: HypercubeWorkerPool | null = null;
 
@@ -60,7 +65,9 @@ export class HypercubeGrid {
             this.cubes[y] = [];
             for (let x = 0; x < cols; x++) {
                 const cube = new HypercubeChunk(x, y, this.nx, this.ny, this.nz, masterBuffer, finalNumFaces);
-                cube.setEngine(y === 0 && x === 0 ? tempEngine : engineFactory());
+                const engineInstance = y === 0 && x === 0 ? tempEngine : engineFactory();
+                cube.setEngine(engineInstance);
+                engineInstance.init(cube.faces, cube.nx, cube.ny, cube.nz, false); // isWorker = false
                 this.cubes[y][x] = cube;
             }
         }
@@ -144,19 +151,30 @@ export class HypercubeGrid {
         }
 
         // 1. Calcul (Intra-Cube) - Mode CPU Multithread (Workers + SharedMemory)
+        const computeStart = performance.now();
+
         if (this.workerPool && this.masterBuffer.buffer instanceof SharedArrayBuffer) {
             const flatCubes = this.cubes.flat().filter(c => c !== null) as HypercubeChunk[];
 
             // Note: On assume que l'engine du premier cube est représentatif
             const engineName = flatCubes[0]?.engine?.name || 'Unknown';
-            const engineConfig = {
-                radius: (flatCubes[0]?.engine as any)?.radius || 10,
-                weight: (flatCubes[0]?.engine as any)?.weight || 1.0,
-                targetX: (flatCubes[0]?.engine as any)?.targetX ?? 256,
-                targetY: (flatCubes[0]?.engine as any)?.targetY ?? 256
-            };
+            const engineConfigs = flatCubes.map(c => {
+                const ce = c.engine;
+                if (ce && ce.getConfig) return ce.getConfig();
 
-            await this.workerPool.computeAll(flatCubes, this.masterBuffer.buffer, { name: engineName, config: engineConfig });
+                // Fallback générique retro-compatible si getConfig n'est pas implémenté
+                return {
+                    radius: (ce as any)?.radius || 10,
+                    weight: (ce as any)?.weight ?? 0.0,
+                    targetX: (ce as any)?.targetX ?? 256,
+                    targetY: (ce as any)?.targetY ?? 256,
+                    isLeftBoundary: (ce as any)?.isLeftBoundary ?? (c.x === 0),
+                    isRightBoundary: (ce as any)?.isRightBoundary ?? (c.x === this.cols - 1),
+                    ...(ce as any)?.params
+                };
+            });
+
+            await this.workerPool.computeAll(flatCubes, this.masterBuffer.buffer, { name: engineName, config: engineConfigs });
         }
         // 1bis. Calcul (Intra-Cube) - Mode CPU Séquentiel (Main Thread)
         else {
@@ -167,9 +185,14 @@ export class HypercubeGrid {
             }
         }
 
+        const computeEnd = performance.now();
+        this.stats.computeTimeMs = computeEnd - computeStart;
+
         // 2. Synchronisation des bords O(1) Data Copy
         // S'il n'y a qu'un seul cube, la synchronisation est inutile (et risquerait d'écraser des données sur lui-même)
         if (this.cols === 1 && this.rows === 1) return;
+
+        const syncStart = performance.now();
 
         let faces: number[];
         if (facesToSynchronize !== undefined) {
@@ -183,6 +206,9 @@ export class HypercubeGrid {
         for (const f of faces) {
             this.synchronizeBoundaries(f);
         }
+
+        const syncEnd = performance.now();
+        this.stats.syncTimeMs = syncEnd - syncStart;
     }
 
     /**
@@ -234,9 +260,9 @@ export class HypercubeGrid {
                     const botCube = this.cubes[(y + 1) % this.rows][x]!;
                     const botData = botCube.faces[f];
                     for (let lz = 0; lz < nz; lz++) {
-                        for (let lx = 1; lx < nx - 1; lx++) {
-                            botData[botCube.getIndex(lx, 0, lz)] = data[cube.getIndex(lx, ny - 2, lz)];
-                        }
+                        const srcOffset = cube.getIndex(1, ny - 2, lz);
+                        const dstOffset = botCube.getIndex(1, 0, lz);
+                        botData.set(data.subarray(srcOffset, srcOffset + nx - 2), dstOffset);
                     }
                 }
 
@@ -246,9 +272,9 @@ export class HypercubeGrid {
                     const topCube = this.cubes[topRow][x]!;
                     const topData = topCube.faces[f];
                     for (let lz = 0; lz < nz; lz++) {
-                        for (let lx = 1; lx < nx - 1; lx++) {
-                            topData[topCube.getIndex(lx, ny - 1, lz)] = data[cube.getIndex(lx, 1, lz)];
-                        }
+                        const srcOffset = cube.getIndex(1, 1, lz);
+                        const dstOffset = topCube.getIndex(1, ny - 1, lz);
+                        topData.set(data.subarray(srcOffset, srcOffset + nx - 2), dstOffset);
                     }
                 }
             }

@@ -1,12 +1,7 @@
 import type { HypercubeMasterBuffer } from '../HypercubeMasterBuffer';
 import { HypercubeChunk } from '../HypercubeChunk';
 import type { IHypercubeEngine } from '../../engines/IHypercubeEngine';
-// Import statique des moteurs connus (A améliorer via un Registry dynamique plus tard)
-import { HeatmapEngine } from '../../engines/HeatmapEngine';
-import { FlowFieldEngine } from '../../engines/FlowFieldEngine';
-import { FluidEngine } from '../../engines/FluidEngine';
-import { AerodynamicsEngine } from '../../engines/AerodynamicsEngine';
-import { OceanEngine } from '../../engines/OceanEngine';
+import { EngineRegistry } from '../EngineRegistry';
 
 /**
  * Script de base exécuté par les instances Web Worker de la HypercubeWorkerPool.
@@ -49,37 +44,24 @@ self.onmessage = (e: MessageEvent) => {
             return;
         }
 
+        // --- Validate Header ---
+        const header = new Uint32Array(sharedBuffer, 0, 2);
+        if (header[0] !== 0x48595045 || header[1] !== 4) {
+            console.error("[Worker CPU] Buffer invalide ou version mismatch. Format attendu: HYPE v4.");
+            postMessage({ type: 'DONE', success: false });
+            return;
+        }
+
         let cube = chunkCache.get(cubeOffset);
 
         if (!cube) {
-            // 1. Recréer l'Engine depuis son nom et sa config UNIQUEMENT la première fois
-            let engine: IHypercubeEngine | null = null;
-            if (engineName === 'Heatmap (O1 Spatial Convolution)') {
-                engine = new HeatmapEngine(engineConfig?.radius, engineConfig?.weight);
-            } else if (engineName === 'FlowFieldEngine-V12') {
-                engine = new FlowFieldEngine();
-                if (engineConfig && 'targetX' in engineConfig) {
-                    (engine as any).targetX = engineConfig.targetX;
-                    (engine as any).targetY = engineConfig.targetY;
-                }
-            } else if (engineName === 'Simplified Fluid Dynamics') {
-                engine = new FluidEngine(engineConfig?.dt, engineConfig?.buoyancy, engineConfig?.dissipation);
-            } else if (engineName === 'Lattice Boltzmann D2Q9 (O(1))') {
-                engine = new AerodynamicsEngine();
-            } else if (engineName === 'OceanEngine') {
-                engine = new OceanEngine();
-                if (engineConfig && Object.keys(engineConfig).length > 0) {
-                    (engine as any).params = engineConfig;
-                }
-            } else {
-                console.error(`[Worker] Moteur non reconnu ou non supporté par les Web Workers: ${engineName}`);
-                postMessage({ type: 'DONE', success: false });
-                return;
-            }
-
-            if (!engine) {
-                console.error(`[Worker CPU] Erreur fatale: engine est null.`);
-                postMessage({ type: 'DONE', success: false });
+            // 1. Instancier l'Engine dynamique via le Registry
+            let engine: IHypercubeEngine;
+            try {
+                engine = EngineRegistry.create(engineName, engineConfig);
+            } catch (err: any) {
+                console.error(err.message);
+                postMessage({ type: 'DONE', success: false, error: err.message });
                 return;
             }
 
@@ -90,18 +72,13 @@ self.onmessage = (e: MessageEvent) => {
             // 3. Reconstruire le Cube (Zéro-Copie des données)
             cube = new HypercubeChunk(chunkX || 0, chunkY || 0, nx, ny, nz || 1, dummyBuffer as unknown as any, numFaces || 6);
             cube.setEngine(engine);
+            engine.init(cube.faces, cube.nx, cube.ny, cube.nz, true); // isWorker = true
 
             chunkCache.set(cubeOffset, cube);
         } else {
             // 4. Mettre à jour la configuration dynamique si elle a changé
             if (cube.engine && engineConfig) {
-                if (engineName === 'FlowFieldEngine-V12' && 'targetX' in engineConfig) {
-                    (cube.engine as any).targetX = engineConfig.targetX;
-                    (cube.engine as any).targetY = engineConfig.targetY;
-                } else if (engineName === 'OceanEngine' && Object.keys(engineConfig).length > 0) {
-                    // Update nested params or simply copy values
-                    (cube.engine as any).params = { ...(cube.engine as any).params, ...engineConfig };
-                }
+                EngineRegistry.applyConfig(cube.engine, engineConfig);
             }
         }
 

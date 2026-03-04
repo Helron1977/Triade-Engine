@@ -53,10 +53,16 @@ export class OceanEngine implements IHypercubeEngine {
 
     constructor() { }
 
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        if (isWorker) return; // Main thread already initialized SAB
+        // We defer full initialization to OceanSimulatorAddon for this specific case.
+    }
+
     /**
      * Entry point: Orchestrates LBM and Bio steps
      */
-    compute(faces: Float32Array[], size: number): void {
+    compute(faces: Float32Array[], nx: number, ny: number, nz: number): void {
+        const size = nx; // Fallback to size logic for this addon
         this.stepLBM(faces, size);
         this.stepBio(faces, size);
     }

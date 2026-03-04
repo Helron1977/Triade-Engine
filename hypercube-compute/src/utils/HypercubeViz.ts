@@ -124,12 +124,14 @@ export class HypercubeViz {
         width: number,
         height: number,
         colors: 'green' | 'heat' | 'grayscale' | 'viridis' | 'plasma' | 'magma' | 'bipolar' = 'green',
-        normalize: boolean = true
+        normalize: boolean = true,
+        offsetX: number = 0,
+        offsetY: number = 0
     ): void {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        if (canvas.width !== width || canvas.height !== height) {
+        if (offsetX === 0 && offsetY === 0 && (canvas.width !== width || canvas.height !== height)) {
             canvas.width = width;
             canvas.height = height;
         }
@@ -199,7 +201,7 @@ export class HypercubeViz {
                 buf[i] = 0xFF000000 | (c << 16) | (c << 8) | c;
             }
         }
-        ctx.putImageData(imgData, 0, 0);
+        ctx.putImageData(imgData, offsetX, offsetY);
     }
 
     /**

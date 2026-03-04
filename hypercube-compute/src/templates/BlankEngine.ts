@@ -13,15 +13,19 @@ export class BlankEngine implements IHypercubeEngine {
         return 6;
     }
 
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        if (isWorker) return;
+        // Allocate or Initialize any engine-specific structures here
+    }
+
     /**
      * Called at every simulation tick.
      * @param faces Array of Float32Array (VRAM Memory mapping of the TriadeCube)
      *              Face[0] is typically the main Output buffer or State A
      *              Face[1] is typically the Secondary buffer or State B (Wait/Swap)
-     * @param mapSize The N x N resolution of the chunk
      */
-    compute(faces: FlatTensorView[], mapSize: number): void {
-        const length = mapSize * mapSize;
+    compute(faces: FlatTensorView[], nx: number, ny: number, nz: number): void {
+        const length = nx * ny * nz;
 
         // --- VERBOSE O(1) ERROR HANDLING CHECK ---
         // Verify we have enough allocated faces to compute our algorithm

@@ -78,6 +78,39 @@ export class OceanEngine implements IHypercubeEngine {
 
     constructor() { }
 
+    public getConfig(): Record<string, any> {
+        return {
+            ...this.params
+        };
+    }
+
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        if (isWorker) return; // Main thread already initialized SAB
+
+        const u0 = 0.0;
+        const v0 = 0.0;
+        const rho0 = 1.0;
+        const u2 = u0 * u0 + v0 * v0;
+
+        for (let lz = 0; lz < nz; lz++) {
+            const zOff = lz * ny * nx;
+            for (let i = 0; i < nx * ny; i++) {
+                const idx = zOff + i;
+                faces[22][idx] = rho0;
+                faces[19][idx] = u0;
+                faces[20][idx] = v0;
+                faces[23][idx] = 0.01; // Initial small plankton amount
+
+                for (let k = 0; k < 9; k++) {
+                    const cu = 3 * (this.cx[k] * u0 + this.cy[k] * v0);
+                    const feq = this.w[k] * rho0 * (1 + cu + 0.5 * cu * cu - 1.5 * u2);
+                    faces[k][idx] = feq;
+                    faces[k + 9][idx] = feq;
+                }
+            }
+        }
+    }
+
     public addGlobalCurrent(faces: Float32Array[], targetUx: number, targetUy: number): void {
         const nx = 256; // Fallback size, ideally should get nx/ny
         const ny = 256;

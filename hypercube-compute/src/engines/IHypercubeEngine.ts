@@ -10,6 +10,16 @@ export type FlatTensorView = Float32Array;
  */
 export interface IHypercubeEngine {
     /**
+     * @description Obligatoire : Initialise l'état physique du moteur dans la VRAM/SAB avant la boucle.
+     * @param faces Les N "Views" (FlatTensorView) pointant vers la VRAM continue.
+     * @param nx Largeur
+     * @param ny Hauteur
+     * @param nz Profondeur
+     * @param isWorker Si vrai, évite de surécrire la VRAM/SAB (déjà fait par le thread principal)
+     */
+    init(faces: FlatTensorView[], nx: number, ny: number, nz: number, isWorker?: boolean): void;
+
+    /**
      * @description Exécute un pas de simulation mathématique à l'intérieur d'un TriadeCube.
      * @param faces Les N "Views" (FlatTensorView) pointant vers la VRAM continue.
      * @param nx Largeur
@@ -36,6 +46,11 @@ export interface IHypercubeEngine {
      * synchronisées aux frontières des chunks (Boundary Exchange) après chaque compute.
      */
     getSyncFaces?(): number[];
+
+    /**
+     * @description Retourne un dictionnaire de configuration encapsulant l'état sérialisable du moteur pour les Web Workers.
+     */
+    getConfig?(): Record<string, any>;
 
     /**
      * Code source WGSL (Compute Shader) optionnel pour l'exécution sur GPU.

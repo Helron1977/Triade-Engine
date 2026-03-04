@@ -2,6 +2,10 @@ export class HypercubeMasterBuffer {
     public readonly buffer: ArrayBuffer | SharedArrayBuffer;
     private offset: number = 0;
 
+    public static readonly MAGIC_NUMBER = 0x48595045; // "HYPE"
+    public static readonly VERSION = 4;
+    public static readonly HEADER_SIZE = 256;
+
     /**
      * Alloue un unique bloc de mémoire vive pour l'ensemble du système.
      * Utilise un SharedArrayBuffer si disponible pour le support CPU multithread (Zero-Copy).
@@ -14,6 +18,13 @@ export class HypercubeMasterBuffer {
             console.warn("[HypercubeMasterBuffer] SharedArrayBuffer n'est pas supporté (vérifiez vos headers COOP/COEP). Fallback sur ArrayBuffer (pas de multi-threading CPU possible).");
             this.buffer = new ArrayBuffer(totalBytes);
         }
+
+        // Header Initialization
+        const header = new Uint32Array(this.buffer, 0, 2);
+        header[0] = HypercubeMasterBuffer.MAGIC_NUMBER;
+        header[1] = HypercubeMasterBuffer.VERSION;
+
+        this.offset = HypercubeMasterBuffer.HEADER_SIZE;
     }
 
     /**

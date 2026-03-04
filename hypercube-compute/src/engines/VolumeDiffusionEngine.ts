@@ -34,6 +34,10 @@ export class VolumeDiffusionEngine implements IHypercubeEngine {
         this.diffusionRate = Math.min(diffusionRate, 1 / 6);
     }
 
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        // Initial state is typically injected from outside via specific splats
+    }
+
     /**
      * Simulation CPU du stencil 3D.
      */

@@ -42,6 +42,10 @@ export class GameOfLifeEngine implements IHypercubeEngine {
     private readonly survivalMax = 3; // Max pour éviter surpop
     private readonly birthThreshold = 3; // Prédateurs pour naissance
 
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        // L'écosystème est typiquement initialisé par l'extérieur via des graines
+    }
+
     public compute(faces: Float32Array[], nx: number, ny: number, nz: number): void {
         const current = faces[1]; // État actuel t (0-3)
         const next = faces[2];    // État futur t+1 (0-3)

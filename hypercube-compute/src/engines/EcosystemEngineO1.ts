@@ -9,6 +9,16 @@ export class EcosystemEngineO1 implements IHypercubeEngine {
         return 6;
     }
 
+    public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
+        if (isWorker) return;
+        const current = faces[1];
+        for (let i = 0; i < nx * ny * nz; i++) {
+            if (Math.random() < 0.1) {
+                current[i] = Math.random() < 0.5 ? 2 : 3;
+            }
+        }
+    }
+
     public compute(faces: Float32Array[], nx: number, ny: number, nz: number): void {
         const current = faces[1];
         const next = faces[2];

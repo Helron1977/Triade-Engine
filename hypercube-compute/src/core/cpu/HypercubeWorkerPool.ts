@@ -98,6 +98,7 @@ export class HypercubeWorkerPool {
                 // S'il reste des cubes à traiter, assigner au worker
                 if (nextCubeIndex < totalCubes) {
                     const cube = cubesToCompute[nextCubeIndex];
+                    const cfg = Array.isArray(engineParams.config) ? engineParams.config[nextCubeIndex] : engineParams.config;
                     nextCubeIndex++;
                     activeWorkers++;
 
@@ -118,7 +119,7 @@ export class HypercubeWorkerPool {
                         ny: cube.ny,
                         nz: cube.nz,
                         engineName: engineParams.name,
-                        engineConfig: engineParams.config,
+                        engineConfig: cfg,
                         sharedBuffer: sharedBuffer,
                         chunkX: cube.x,
                         chunkY: cube.y
