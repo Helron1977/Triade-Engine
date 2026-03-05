@@ -12,12 +12,13 @@ export class GrayScottEngine implements IHypercubeEngine {
         return "GrayScottEngine";
     }
 
-    public getSyncFaces(): number[] {
-        return [0, 1]; // Sync Substance A and B across chunk boundaries
-    }
-
     public getRequiredFaces(): number {
         return 4; // A, B, A_next, B_next
+    }
+
+    public getSyncFaces(): number[] {
+        // Substance A and B indices change based on parity
+        return this.parity === 1 ? [2, 3] : [0, 1];
     }
 
     constructor(
@@ -27,18 +28,19 @@ export class GrayScottEngine implements IHypercubeEngine {
         public kill: number = 0.06
     ) { }
 
+    private pipelineGS: GPUComputePipeline | null = null;
+    private bindGroup: GPUBindGroup | null = null;
+    private uniformBuffer: GPUBuffer | null = null;
+    private lastStride: number = 0;
+    private parity: number = 0;
+    public gpuEnabled: boolean = false;
+
     public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
         if (isWorker) return;
         // Initial state: Fill A with 1.0, B with 0.0
         faces[0].fill(1.0);
         faces[1].fill(0.0);
     }
-
-    private pipelineGS: GPUComputePipeline | null = null;
-    private pipelineCopy: GPUComputePipeline | null = null;
-    private bindGroup: GPUBindGroup | null = null;
-    private uniformBuffer: GPUBuffer | null = null;
-    private lastStride: number = 0;
 
     public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         this.lastStride = stride / 4;
@@ -59,17 +61,14 @@ export class GrayScottEngine implements IHypercubeEngine {
             compute: { module: shaderModule, entryPoint: 'compute_gs' }
         });
 
-        this.pipelineCopy = device.createComputePipeline({
-            layout: pipelineLayout,
-            compute: { module: shaderModule, entryPoint: 'copy_faces' }
-        });
-
-        const uniformData = new ArrayBuffer(32);
+        const uniformSize = 12 * 4; // u32[0-3], f32[4-7], u32[8], pad[9-11]
+        const uniformData = new ArrayBuffer(uniformSize);
         const u32 = new Uint32Array(uniformData);
         const f32 = new Float32Array(uniformData);
 
         u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride;
         f32[4] = this.Da; f32[5] = this.Db; f32[6] = this.feed; f32[7] = this.kill;
+        u32[8] = this.parity;
 
         this.uniformBuffer = device.createBuffer({
             size: uniformData.byteLength,
@@ -88,18 +87,19 @@ export class GrayScottEngine implements IHypercubeEngine {
         this.gpuEnabled = true;
     }
 
-    public gpuEnabled: boolean = false;
-
     public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup || !this.pipelineGS || !this.pipelineCopy || !this.uniformBuffer) return;
+        if (!this.bindGroup || !this.pipelineGS || !this.uniformBuffer) return;
 
-        const uniformData = new ArrayBuffer(32);
+        const uniformData = new ArrayBuffer(12 * 4);
         const u32 = new Uint32Array(uniformData);
         const f32 = new Float32Array(uniformData);
 
         u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride; // strideFace
         f32[4] = this.Da; f32[5] = this.Db; f32[6] = this.feed; f32[7] = this.kill;
+        u32[8] = this.parity;
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+
+        this.parity = 1 - this.parity;
 
         const passEncoder = commandEncoder.beginComputePass();
         passEncoder.setBindGroup(0, this.bindGroup);
@@ -107,17 +107,14 @@ export class GrayScottEngine implements IHypercubeEngine {
         passEncoder.setPipeline(this.pipelineGS);
         passEncoder.dispatchWorkgroups(Math.ceil(nx / 16), Math.ceil(ny / 16), nz || 1);
 
-        passEncoder.setPipeline(this.pipelineCopy);
-        passEncoder.dispatchWorkgroups(Math.ceil((nx * ny * nz) / 256));
-
         passEncoder.end();
     }
 
     public compute(faces: Float32Array[], nx: number, ny: number, nz: number): void {
-        const A = faces[0];
-        const B = faces[1];
-        const Anext = faces[2];
-        const Bnext = faces[3];
+        const A_in = faces[this.parity * 2];
+        const B_in = faces[this.parity * 2 + 1];
+        const A_out = faces[(1 - this.parity) * 2];
+        const B_out = faces[(1 - this.parity) * 2 + 1];
 
         for (let lz = 0; lz < nz; lz++) {
             const zOff = lz * ny * nx;
@@ -126,30 +123,30 @@ export class GrayScottEngine implements IHypercubeEngine {
                 for (let lx = 1; lx < nx - 1; lx++) {
                     const idx = zOff + yOff + lx;
 
-                    const a = A[idx];
-                    const b = B[idx];
+                    const a = A_in[idx];
+                    const b = B_in[idx];
 
-                    // 5-point laplacian (2D slice focus for performance & patterns)
-                    const lapA = (A[idx - 1] + A[idx + 1] + A[idx - nx] + A[idx + nx] - 4 * a);
-                    const lapB = (B[idx - 1] + B[idx + 1] + B[idx - nx] + B[idx + nx] - 4 * b);
+                    // 5-point laplacian
+                    const lapA = (A_in[idx - 1] + A_in[idx + 1] + A_in[idx - nx] + A_in[idx + nx] - 4 * a);
+                    const lapB = (B_in[idx - 1] + B_in[idx + 1] + B_in[idx - nx] + B_in[idx + nx] - 4 * b);
 
                     const react = a * b * b;
 
-                    Anext[idx] = a + (this.Da * lapA - react + this.feed * (1 - a));
-                    Bnext[idx] = b + (this.Db * lapB + react - (this.feed + this.kill) * b);
+                    A_out[idx] = a + (this.Da * lapA - react + this.feed * (1 - a));
+                    B_out[idx] = b + (this.Db * lapB + react - (this.feed + this.kill) * b);
                 }
             }
         }
 
-        A.set(Anext);
-        B.set(Bnext);
+        this.parity = 1 - this.parity;
     }
 
     private getWgslSource(): string {
         return `
             struct Uniforms {
                 nx: u32, ny: u32, nz: u32, strideFace: u32,
-                Da: f32, Db: f32, feed: f32, kill: f32
+                Da: f32, Db: f32, feed: f32, kill: f32,
+                parity: u32, pad1: f32, pad2: f32, pad3: f32
             };
 
             @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
@@ -165,10 +162,10 @@ export class GrayScottEngine implements IHypercubeEngine {
                 let idx = z * config.nx * config.ny + y * config.nx + x;
 
                 let stride = config.strideFace;
-                let face_A = 0u;
-                let face_B = stride * 1u;
-                let face_Anext = stride * 2u;
-                let face_Bnext = stride * 3u;
+                let face_A = config.parity * 2u * stride;
+                let face_B = (config.parity * 2u + 1u) * stride;
+                let face_Anext = (1u - config.parity) * 2u * stride;
+                let face_Bnext = ((1u - config.parity) * 2u + 1u) * stride;
 
                 let a = cube[face_A + idx];
                 let b = cube[face_B + idx];
@@ -193,18 +190,7 @@ export class GrayScottEngine implements IHypercubeEngine {
                 cube[face_Bnext + idx] = b + (config.Db * lapB + react - (config.feed + config.kill) * b);
             }
 
-            @compute @workgroup_size(256)
-            fn copy_faces(@builtin(global_invocation_id) global_id: vec3<u32>) {
-                let idx = global_id.x;
-                let total_size = config.nx * config.ny * config.nz;
-                if (idx >= total_size) { return; }
-                
-                let stride = config.strideFace;
-                // A = Anext
-                cube[idx] = cube[stride * 2u + idx];
-                // B = Bnext
-                cube[stride * 1u + idx] = cube[stride * 3u + idx];
-            }
+            // copy_faces removed
         `;
     }
 }

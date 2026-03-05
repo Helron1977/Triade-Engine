@@ -2,8 +2,8 @@ import { HypercubeCpuGrid } from '../src/core/HypercubeCpuGrid';
 import { HypercubeMasterBuffer } from '../src/core/HypercubeMasterBuffer';
 import { AerodynamicsEngine } from '../src/engines/AerodynamicsEngine';
 import { BoundaryType } from '../src/core/cpu/BoundaryConditions';
-import { CanvasAdapter } from '../src/io/CanvasAdapter';
 import { HypercubeMath } from '../src/math/HypercubeMath';
+import { Hypercube } from '../src/Hypercube';
 import { BenchmarkHUD } from './shared/BenchmarkHUD';
 
 const RESOLUTION = 256;
@@ -11,6 +11,9 @@ const ROWS = 2;
 const COLS = 2;
 
 async function bootstrap() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode') === 'gpu' ? 'gpu' : 'cpu';
+
     // Add description overlay
     const desc = document.createElement('div');
     desc.className = 'showcase-description';
@@ -42,7 +45,8 @@ async function bootstrap() {
         numFaces,
         false, // Not periodic
         true,   // Multithreading on
-        new URL('./cpu.worker.ts', import.meta.url).href
+        new URL('./cpu.worker.ts', import.meta.url).href,
+        mode
     );
 
     // Apply strict Global Boundaries
@@ -90,7 +94,6 @@ async function bootstrap() {
     canvas.style.objectFit = 'contain';
     document.body.appendChild(canvas);
 
-    const adapter = new CanvasAdapter(canvas);
     const hud = new BenchmarkHUD('Aerodynamics D2Q9 (O(1) Unrolled)', `${RESOLUTION * COLS} x ${RESOLUTION * ROWS}`);
 
     // Main Compute Loop
@@ -100,18 +103,14 @@ async function bootstrap() {
         // 1. Math Step (O(1) LBM Multithreaded)
         await grid.compute();
 
-        // 2. Render Vorticité (Face 21)
-        adapter.renderFromFaces(
-            grid.cubes.map(row => row.map(c => c!.faces)),
-            grid.nx, grid.ny, COLS, ROWS,
-            {
-                faceIndex: 21,
-                colormap: 'vorticity',
-                minVal: -0.05,
-                maxVal: 0.05,
-                obstaclesFace: 18
-            }
-        );
+        // 2. Render Vorticité (Face 21) safely via autoRender
+        Hypercube.autoRender(grid, canvas, {
+            faceIndex: 21,
+            colormap: 'vorticity',
+            minVal: -0.05,
+            maxVal: 0.05,
+            obstaclesFace: 18
+        });
 
         const ms = performance.now() - start;
         hud.updateCompute(ms);

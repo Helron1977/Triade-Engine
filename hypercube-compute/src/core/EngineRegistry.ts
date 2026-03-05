@@ -7,17 +7,18 @@ import { OceanEngine } from '../engines/OceanEngine';
 import { HeatDiffusionEngine3D } from '../engines/HeatDiffusionEngine3D';
 import { VolumeDiffusionEngine } from '../engines/VolumeDiffusionEngine';
 import { GameOfLifeEngine } from '../engines/GameOfLifeEngine';
+import { GrayScottEngine } from '../engines/GrayScottEngine';
 
 export type EngineConstructor = new (...args: any[]) => IHypercubeEngine;
 
 export class EngineRegistry {
-    private static engines = new Map<string, EngineConstructor>();
+    private static engines = new Map<string, { constructor: EngineConstructor, tags: string[] }>();
 
     /**
      * Enregistre dynamiquement un nouveau moteur mathématique.
      */
-    public static register(name: string, constructor: EngineConstructor) {
-        this.engines.set(name, constructor);
+    public static register(name: string, constructor: EngineConstructor, tags: string[] = []) {
+        this.engines.set(name, { constructor, tags });
     }
 
     /**
@@ -25,12 +26,12 @@ export class EngineRegistry {
      * Appliquera intelligemment la configuration si présente.
      */
     public static create(name: string, config?: any): IHypercubeEngine {
-        const ctor = this.engines.get(name);
-        if (!ctor) {
+        const entry = this.engines.get(name);
+        if (!entry) {
             throw new Error(`[EngineRegistry] Moteur non reconnu ou non supporté : "${name}". Avez-vous oublié de l'enregistrer ?`);
         }
 
-        const engine = new ctor();
+        const engine = new entry.constructor();
 
         // Application générique de la configuration
         if (config) {
@@ -38,6 +39,10 @@ export class EngineRegistry {
         }
 
         return engine;
+    }
+
+    public static getTags(name: string): string[] {
+        return this.engines.get(name)?.tags || [];
     }
 
     /**
@@ -67,13 +72,13 @@ export class EngineRegistry {
 
 // ---- Auto-inscription des moteurs officiels ----
 
-EngineRegistry.register('Heatmap (O1 Spatial Convolution)', HeatmapEngine);
-EngineRegistry.register('FlowFieldEngine-V12', FlowFieldEngine);
-EngineRegistry.register('Simplified Fluid Dynamics', FluidEngine);
-EngineRegistry.register('Lattice Boltzmann D2Q9 (O(1))', AerodynamicsEngine);
-EngineRegistry.register('Aerodynamics LBM D2Q9', AerodynamicsEngine); // Alias de compatibilité
-EngineRegistry.register('OceanEngine', OceanEngine);
-EngineRegistry.register('HeatDiffusionEngine3D', HeatDiffusionEngine3D);
-EngineRegistry.register('Volume Diffusion (3D Stencil)', VolumeDiffusionEngine);
-EngineRegistry.register('GameOfLifeEngine', GameOfLifeEngine);
+EngineRegistry.register('Heatmap (O1 Spatial Convolution)', HeatmapEngine, ['2d']);
+EngineRegistry.register('FlowFieldEngine-V12', FlowFieldEngine, ['2d']);
+EngineRegistry.register('Simplified Fluid Dynamics', FluidEngine, ['2d']);
+EngineRegistry.register('Aerodynamics LBM D2Q9', AerodynamicsEngine, ['2d', 'lbm']);
+EngineRegistry.register('OceanEngine', OceanEngine, ['2.5d', 'iso', 'lbm']);
+EngineRegistry.register('HeatDiffusionEngine3D', HeatDiffusionEngine3D, ['3d', 'slice']);
+EngineRegistry.register('Volume Diffusion (3D Stencil)', VolumeDiffusionEngine, ['3d', 'slice']);
+EngineRegistry.register('GameOfLifeEngine', GameOfLifeEngine, ['2d', 'cellular']);
+EngineRegistry.register('GrayScottEngine', GrayScottEngine, ['2d', 'organic']);
 

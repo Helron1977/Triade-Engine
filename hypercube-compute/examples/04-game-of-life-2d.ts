@@ -6,6 +6,9 @@ const COLS = 2;
 const ROWS = 2;
 
 async function bootstrap() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = (urlParams.get('mode') as 'auto' | 'cpu' | 'gpu') || 'auto';
+
     // Add description overlay
     const desc = document.createElement('div');
     desc.className = 'showcase-description';
@@ -27,7 +30,8 @@ async function bootstrap() {
         resolution: RESOLUTION,
         cols: COLS, rows: ROWS,
         workers: true,
-        workerScript: new URL('./cpu.worker.ts', import.meta.url).href
+        workerScript: new URL('./cpu.worker.ts', import.meta.url).href,
+        mode: mode
     });
 
     // 2. Initial Seeding using V5 Global Helpers

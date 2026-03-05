@@ -84,6 +84,16 @@ async function bootstrap() {
     const isoRenderer = new HypercubeIsoRenderer(canvas, undefined, 4.0);
     const hud = new BenchmarkHUD('OceanEngine 2.5D IsoVolume', `${RESOLUTION * COLS} x ${RESOLUTION * ROWS}`);
 
+    // Add mouse interaction
+    canvas.addEventListener('mousemove', (e: any) => {
+        if (e.buttons === 1) {
+            const rect = canvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * worldW;
+            const y = ((e.clientY - rect.top) / rect.height) * worldH;
+            grid.applyEquilibrium(x, y, 0, 10, 1.4, 0, 0);
+            if (mode === 'gpu') grid.cubes.flat().forEach(c => c?.syncFromHost());
+        }
+    });
     async function tick() {
         const start = performance.now();
         await grid.compute();
@@ -92,8 +102,9 @@ async function bootstrap() {
             for (let y = 0; y < grid.rows; y++) {
                 for (let x = 0; x < grid.cols; x++) {
                     const chunk = grid.cubes[y][x];
-                    // On ne synchronise que la densité (22) et les obstacles (18) pour le rendu
-                    if (chunk) await chunk.syncToHost([22, 18]);
+                    // On ne synchronise que la densité (22) et les obstacles (18) pour le rendu.
+                    // On utilise le mode non-bloquant (async) pour éviter les stalls PCIe.
+                    if (chunk) chunk.syncToHost([22, 18], false);
                 }
             }
         }

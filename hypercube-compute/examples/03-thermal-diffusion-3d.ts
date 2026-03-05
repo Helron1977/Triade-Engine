@@ -1,7 +1,7 @@
 import { HypercubeCpuGrid } from '../src/core/HypercubeCpuGrid';
 import { HypercubeMasterBuffer } from '../src/core/HypercubeMasterBuffer';
 import { HeatDiffusionEngine3D } from '../src/engines/HeatDiffusionEngine3D';
-import { CanvasAdapter } from '../src/io/CanvasAdapter';
+import { Hypercube } from '../src/Hypercube';
 import { BenchmarkHUD } from './shared/BenchmarkHUD';
 
 const RESOLUTION = 48;
@@ -10,6 +10,9 @@ const COLS = 2;
 const NZ = 32;
 
 async function bootstrap() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode') === 'gpu' ? 'gpu' : 'cpu';
+
     // Add description overlay
     const desc = document.createElement('div');
     desc.className = 'showcase-description';
@@ -41,7 +44,8 @@ async function bootstrap() {
         numFaces,
         false,
         true, // Multithreading on 
-        new URL('./cpu.worker.ts', import.meta.url).href
+        new URL('./cpu.worker.ts', import.meta.url).href,
+        mode
     );
 
     // Initial Heat Drop centered GLOBALLY (using V5 Helper)
@@ -60,7 +64,6 @@ async function bootstrap() {
     canvas.style.objectFit = 'contain';
     document.body.appendChild(canvas);
 
-    const adapter = new CanvasAdapter(canvas);
     const hud = new BenchmarkHUD('Thermal Diffusion 3D', `${RESOLUTION * COLS} x ${RESOLUTION * ROWS} x ${NZ}`);
 
     let currentSliceZ = Math.floor(NZ / 2);
@@ -69,17 +72,13 @@ async function bootstrap() {
         const start = performance.now();
         await grid.compute();
 
-        adapter.renderFromFaces(
-            grid.cubes.map(row => row.map(c => c!.faces)),
-            grid.nx, grid.ny, COLS, ROWS,
-            {
-                faceIndex: 0,
-                colormap: 'heatmap',
-                minVal: 0,
-                maxVal: 80, // Slightly tighter max to see internal colors better
-                sliceZ: currentSliceZ
-            }
-        );
+        Hypercube.autoRender(grid, canvas, {
+            faceIndex: 0,
+            colormap: 'heatmap',
+            minVal: 0,
+            maxVal: 80, // Slightly tighter max to see internal colors better
+            sliceZ: currentSliceZ
+        });
 
         const ms = performance.now() - start;
         hud.updateCompute(ms);

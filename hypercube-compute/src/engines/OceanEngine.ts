@@ -37,7 +37,15 @@ export class OceanEngine implements IHypercubeEngine {
     }
 
     public getSyncFaces(): number[] {
-        return [0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 19, 20]; // LBM pop (0-8) + macros (ux, uy, rho)
+        // En Ping-Pong, on synchronise les faces qui viennent d'être ÉCRITES.
+        // Si parity == 1, cela signifie qu'on vient de faire un pass 0 -> 9-17.
+        // Si parity == 0, cela signifie qu'on vient de faire un pass 1 -> 0-8.
+        const pops = this.parity === 1 ? [9, 10, 11, 12, 13, 14, 15, 16, 17] : [0, 1, 2, 3, 4, 5, 6, 7, 8];
+        return [...pops, 18, 19, 20, 22]; // LBM pop + macros (ux, uy, rho)
+    }
+
+    public getParity(): number {
+        return this.parity;
     }
 
     // Re-use lab-perfect constants
@@ -75,10 +83,10 @@ export class OceanEngine implements IHypercubeEngine {
 
     private pipelineLBM: GPUComputePipeline | null = null;
     private pipelineBio: GPUComputePipeline | null = null;
-    private pipelineCopy: GPUComputePipeline | null = null;
     private bindGroup: GPUBindGroup | null = null;
     private uniformBuffer: GPUBuffer | null = null;
     private lastStride: number = 0;
+    private parity: number = 0;
     public gpuEnabled: boolean = false;
 
     public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
@@ -103,11 +111,6 @@ export class OceanEngine implements IHypercubeEngine {
             compute: { module: shaderModule, entryPoint: 'compute_bio' }
         });
 
-        this.pipelineCopy = device.createComputePipeline({
-            layout: pipelineLayout,
-            compute: { module: shaderModule, entryPoint: 'copy_faces' }
-        });
-
         const uniformSize = 16 * 4; // 16 floats/uints
         const uniformData = new ArrayBuffer(uniformSize);
         const u32 = new Uint32Array(uniformData);
@@ -117,6 +120,7 @@ export class OceanEngine implements IHypercubeEngine {
         f32[4] = this.params.tau_0; f32[5] = this.params.smagorinsky;
         f32[6] = this.params.cflLimit; f32[7] = this.params.closedBounds ? 1.0 : 0.0;
         f32[8] = this.params.bioDiffusion; f32[9] = this.params.bioGrowth;
+        u32[10] = this.parity;
 
         this.uniformBuffer = device.createBuffer({
             size: uniformData.byteLength,
@@ -136,7 +140,7 @@ export class OceanEngine implements IHypercubeEngine {
     }
 
     public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup || !this.pipelineLBM || !this.pipelineBio || !this.pipelineCopy || !this.uniformBuffer) return;
+        if (!this.bindGroup || !this.pipelineLBM || !this.pipelineBio || !this.uniformBuffer) return;
 
         const uniformSize = 16 * 4;
         const uniformData = new ArrayBuffer(uniformSize);
@@ -147,7 +151,10 @@ export class OceanEngine implements IHypercubeEngine {
         f32[4] = this.params.tau_0; f32[5] = this.params.smagorinsky;
         f32[6] = this.params.cflLimit; f32[7] = this.params.closedBounds ? 1.0 : 0.0;
         f32[8] = this.params.bioDiffusion; f32[9] = this.params.bioGrowth;
+        u32[10] = this.parity;
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+
+        this.parity = 1 - this.parity; // Flip for next call (though typically controlled by Grid)
 
         const passEncoder = commandEncoder.beginComputePass();
         passEncoder.setBindGroup(0, this.bindGroup);
@@ -157,9 +164,6 @@ export class OceanEngine implements IHypercubeEngine {
 
         passEncoder.setPipeline(this.pipelineBio);
         passEncoder.dispatchWorkgroups(Math.ceil(nx / 16), Math.ceil(ny / 16), nz || 1);
-
-        passEncoder.setPipeline(this.pipelineCopy);
-        passEncoder.dispatchWorkgroups(Math.ceil((nx * ny * nz) / 256));
 
         passEncoder.end();
     }
@@ -223,13 +227,13 @@ export class OceanEngine implements IHypercubeEngine {
         let sumRho = 0;
         let activeCells = 0;
 
-        // 0. CLEAR NEXT FRAME BUFFERS (Only the slice part)
-        for (let k = 0; k < 9; k++) {
-            for (let i = 0; i < nx * ny; i++) faces[k + 9][zOff + i] = 0;
-        }
+        // Ping-Pong CPU Selection
+        const f_in_indices = this.parity === 0 ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [9, 10, 11, 12, 13, 14, 15, 16, 17];
+        const f_out_indices = this.parity === 0 ? [9, 10, 11, 12, 13, 14, 15, 16, 17] : [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
-        const out0 = faces[9], out1 = faces[10], out2 = faces[11], out3 = faces[12], out4 = faces[13], out5 = faces[14], out6 = faces[15], out7 = faces[16], out8 = faces[17];
-        const in0 = faces[0], in1 = faces[1], in2 = faces[2], in3 = faces[3], in4 = faces[4], in5 = faces[5], in6 = faces[6], in7 = faces[7], in8 = faces[8];
+        const in0 = faces[f_in_indices[0]], in1 = faces[f_in_indices[1]], in2 = faces[f_in_indices[2]], in3 = faces[f_in_indices[3]], in4 = faces[f_in_indices[4]], in5 = faces[f_in_indices[5]], in6 = faces[f_in_indices[6]], in7 = faces[f_in_indices[7]], in8 = faces[f_in_indices[8]];
+        const out0 = faces[f_out_indices[0]], out1 = faces[f_out_indices[1]], out2 = faces[f_out_indices[2]], out3 = faces[f_out_indices[3]], out4 = faces[f_out_indices[4]], out5 = faces[f_out_indices[5]], out6 = faces[f_out_indices[6]], out7 = faces[f_out_indices[7]], out8 = faces[f_out_indices[8]];
+
         const cx_w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36];
         const isClosed = this.params.closedBounds;
 
@@ -379,56 +383,47 @@ export class OceanEngine implements IHypercubeEngine {
             this.stats.avgRho = sumRho / activeCells;
         }
         this.stats.maxU = maxU;
-
-        // 4. MEMORY SWAP (Only for the slice)
-        for (let k = 0; k < 9; k++) {
-            for (let i = 0; i < nx * ny; i++) {
-                const idx = zOff + i;
-                const tmp = faces[k][idx];
-                faces[k][idx] = faces[k + 9][idx];
-                faces[k + 9][idx] = tmp;
-            }
-        }
     }
 
     private stepBio(faces: Float32Array[], nx: number, ny: number, lz: number): void {
-        const bio = faces[23];
-        const bio_next = faces[24];
+        const b_in = faces[23 + this.parity];
+        const b_out = faces[23 + (1 - this.parity)];
+
+        const ux = faces[19];
+        const uy = faces[20];
+
+        const diff = this.params.bioDiffusion;
+        const growth = this.params.bioGrowth;
+
         const zOff = lz * ny * nx;
 
         for (let y = 1; y < ny - 1; y++) {
             for (let x = 1; x < nx - 1; x++) {
                 const i = zOff + y * nx + x;
+                const bo = b_in[i];
 
-                // Diffusion laplacienne
-                const lap = bio[i - 1] + bio[i + 1] + bio[i - nx] + bio[i + nx] - 4 * bio[i];
-                let next = bio[i] + this.params.bioDiffusion * lap + this.params.bioGrowth * bio[i] * (1 - bio[i]);
+                // Laplacian
+                const lap = b_in[i - 1] + b_in[i + 1] + b_in[i - nx] + b_in[i + nx] - 4 * bo;
 
-                // Advection
-                const ux = faces[19][i];
-                const uy = faces[20][i];
-                const ax = Math.max(1, Math.min(nx - 2, x - ux * 0.8));
-                const ay = Math.max(1, Math.min(ny - 2, y - uy * 0.8));
-                const ix = Math.floor(ax);
-                const iy = Math.floor(ay);
-                const fx = ax - ix;
-                const fy = ay - iy;
+                // Advection semi-lagrangienne
+                const ax = Math.max(1, Math.min(nx - 2, x - ux[i] * 0.8));
+                const ay = Math.max(1, Math.min(ny - 2, y - uy[i] * 0.8));
+                const ix = Math.floor(ax); const iy = Math.floor(ay);
+                const fx = ax - ix; const fy = ay - iy;
 
-                const v00 = bio[zOff + iy * nx + ix];
-                const v10 = bio[zOff + iy * nx + Math.min(ix + 1, nx - 2)];
-                const v01 = bio[zOff + Math.min(iy + 1, ny - 2) * nx + ix];
-                const v11 = bio[zOff + Math.min(iy + 1, ny - 2) * nx + Math.min(ix + 1, nx - 2)];
+                const v00 = b_in[zOff + iy * nx + ix];
+                const v10 = b_in[zOff + iy * nx + (ix + 1)];
+                const v01 = b_in[zOff + (iy + 1) * nx + ix];
+                const v11 = b_in[zOff + (iy + 1) * nx + (ix + 1)];
 
                 const advected = (1 - fy) * ((1 - fx) * v00 + fx * v10) + fy * ((1 - fx) * v01 + fx * v11);
-                next = advected + this.params.bioDiffusion * lap + this.params.bioGrowth * bio[i] * (1 - bio[i]);
 
+                let next = advected + diff * lap + growth * bo * (1 - bo);
                 if (next < 0) next = 0;
                 if (next > 1) next = 1;
-                bio_next[i] = next;
+                b_out[i] = next;
             }
         }
-
-        for (let i = 0; i < nx * ny; i++) bio[zOff + i] = bio_next[zOff + i];
     }
 
     private getWgslSource(): string {
@@ -436,7 +431,7 @@ export class OceanEngine implements IHypercubeEngine {
             struct Uniforms {
                 nx: u32, ny: u32, nz: u32, strideFace: u32,
                 tau_0: f32, smagorinsky: f32, cflLimit: f32, isClosed: f32,
-                bioDiffusion: f32, bioGrowth: f32, pad1: f32, pad2: f32, pad3: f32, pad4: f32, pad5: f32, pad6: f32
+                bioDiffusion: f32, bioGrowth: f32, parity: u32, pad2: f32, pad3: f32, pad4: f32, pad5: f32, pad6: f32
             };
 
             @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
@@ -454,11 +449,16 @@ export class OceanEngine implements IHypercubeEngine {
                 
                 let idx = z * config.nx * config.ny + y * config.nx + x;
                 let stride = config.strideFace;
-                let f_out_base = 9u * stride;
+                
+                // Ping-Pong Buffers
+                // parity 0: in=0-8, out=9-17
+                // parity 1: in=9-17, out=0-8
+                let f_in_base = config.parity * 9u * stride;
+                let f_out_base = (1u - config.parity) * 9u * stride;
 
                 if (x == 0u || x == config.nx - 1u || y == 0u || y == config.ny - 1u) { 
                     for (var k = 0u; k < 9u; k = k + 1u) {
-                        cube[f_out_base + k * stride + idx] = cube[k * stride + idx];
+                        cube[f_out_base + k * stride + idx] = cube[f_in_base + k * stride + idx];
                     }
                     return; 
                 }
@@ -479,35 +479,35 @@ export class OceanEngine implements IHypercubeEngine {
                 }
 
                 // Internal Pull Streaming
-                var pf0 = cube[0u * stride + idx];
+                var pf0 = cube[f_in_base + 0u * stride + idx];
                 
                 var pf1: f32; var pf2: f32; var pf3: f32; var pf4: f32;
                 var pf5: f32; var pf6: f32; var pf7: f32; var pf8: f32;
 
                 // 1(+x), opp:3
                 let i1 = idx - 1u;
-                pf1 = select(cube[1u * stride + i1], cube[3u * stride + idx], (isClosed && (x <= 1u)) || cube[18u * stride + i1] > 0.5);
+                pf1 = select(cube[f_in_base + 1u * stride + i1], cube[f_in_base + 3u * stride + idx], (isClosed && (x <= 1u)) || cube[18u * stride + i1] > 0.5);
                 // 2(+y), opp:4
                 let i2 = idx - config.nx;
-                pf2 = select(cube[2u * stride + i2], cube[4u * stride + idx], (isClosed && (y <= 1u)) || cube[18u * stride + i2] > 0.5);
+                pf2 = select(cube[f_in_base + 2u * stride + i2], cube[f_in_base + 4u * stride + idx], (isClosed && (y <= 1u)) || cube[18u * stride + i2] > 0.5);
                 // 3(-x), opp:1
                 let i3 = idx + 1u;
-                pf3 = select(cube[3u * stride + i3], cube[1u * stride + idx], (isClosed && (x >= config.nx - 2u)) || cube[18u * stride + i3] > 0.5);
+                pf3 = select(cube[f_in_base + 3u * stride + i3], cube[f_in_base + 1u * stride + idx], (isClosed && (x >= config.nx - 2u)) || cube[18u * stride + i3] > 0.5);
                 // 4(-y), opp:2
                 let i4 = idx + config.nx;
-                pf4 = select(cube[4u * stride + i4], cube[2u * stride + idx], (isClosed && (y >= config.ny - 2u)) || cube[18u * stride + i4] > 0.5);
+                pf4 = select(cube[f_in_base + 4u * stride + i4], cube[f_in_base + 2u * stride + idx], (isClosed && (y >= config.ny - 2u)) || cube[18u * stride + i4] > 0.5);
                 // 5(+x+y), opp:7
                 let i5 = idx - config.nx - 1u;
-                pf5 = select(cube[5u * stride + i5], cube[7u * stride + idx], (isClosed && (x <= 1u || y <= 1u)) || cube[18u * stride + i5] > 0.5);
+                pf5 = select(cube[f_in_base + 5u * stride + i5], cube[f_in_base + 7u * stride + idx], (isClosed && (x <= 1u || y <= 1u)) || cube[18u * stride + i5] > 0.5);
                 // 6(-x+y), opp:8
                 let i6 = idx - config.nx + 1u;
-                pf6 = select(cube[6u * stride + i6], cube[8u * stride + idx], (isClosed && (x >= config.nx - 2u || y <= 1u)) || cube[18u * stride + i6] > 0.5);
+                pf6 = select(cube[f_in_base + 6u * stride + i6], cube[f_in_base + 8u * stride + idx], (isClosed && (x >= config.nx - 2u || y <= 1u)) || cube[18u * stride + i6] > 0.5);
                 // 7(-x-y), opp:5
                 let i7 = idx + config.nx + 1u;
-                pf7 = select(cube[7u * stride + i7], cube[5u * stride + idx], (isClosed && (x >= config.nx - 2u || y >= config.ny - 2u)) || cube[18u * stride + i7] > 0.5);
+                pf7 = select(cube[f_in_base + 7u * stride + i7], cube[f_in_base + 5u * stride + idx], (isClosed && (x >= config.nx - 2u || y >= config.ny - 2u)) || cube[18u * stride + i7] > 0.5);
                 // 8(+x-y), opp:6
                 let i8 = idx + config.nx - 1u;
-                pf8 = select(cube[8u * stride + i8], cube[6u * stride + idx], (isClosed && (x <= 1u || y >= config.ny - 2u)) || cube[18u * stride + i8] > 0.5);
+                pf8 = select(cube[f_in_base + 8u * stride + i8], cube[f_in_base + 6u * stride + idx], (isClosed && (x <= 1u || y >= config.ny - 2u)) || cube[18u * stride + i8] > 0.5);
 
                 var r = pf0 + pf1 + pf2 + pf3 + pf4 + pf5 + pf6 + pf7 + pf8;
                 var vx = (pf1 + pf5 + pf8) - (pf3 + pf6 + pf7);
@@ -611,17 +611,19 @@ export class OceanEngine implements IHypercubeEngine {
                 let idx = z * config.nx * config.ny + y * config.nx + x;
                 let stride = config.strideFace;
 
+                let b_in_base = (23u + config.parity) * stride;
+                let b_out_base = (23u + (1u - config.parity)) * stride;
+
                 if (x == 0u || x == config.nx - 1u || y == 0u || y == config.ny - 1u) { 
-                    cube[24u * stride + idx] = cube[23u * stride + idx];
+                    cube[b_out_base + idx] = cube[b_in_base + idx];
                     return;
                 }
 
-                let b_idx = 23u * stride + idx;
-                let bo = cube[b_idx];
+                let bo = cube[b_in_base + idx];
                 
                 // Laplacian
-                let lap = cube[23u * stride + idx - 1u] + cube[23u * stride + idx + 1u] + 
-                          cube[23u * stride + idx - config.nx] + cube[23u * stride + idx + config.nx] - 4.0 * bo;
+                let lap = cube[b_in_base + idx - 1u] + cube[b_in_base + idx + 1u] + 
+                          cube[b_in_base + idx - config.nx] + cube[b_in_base + idx + config.nx] - 4.0 * bo;
 
                 // Advection semi-lagrangian
                 // Face 18 is static obstacle, 19 is ux, 20 is uy. In CPU code above, there is a bug using face 18 for UX. 
@@ -634,33 +636,20 @@ export class OceanEngine implements IHypercubeEngine {
                 let ix = u32(ax); let iy = u32(ay);
                 let fx = ax - f32(ix); let fy = ay - f32(iy);
 
-                let v00 = cube[23u * stride + z * config.nx * config.ny + iy * config.nx + ix];
-                let v10 = cube[23u * stride + z * config.nx * config.ny + iy * config.nx + min(ix + 1u, config.nx - 2u)];
-                let v01 = cube[23u * stride + z * config.nx * config.ny + min(iy + 1u, config.ny - 2u) * config.nx + ix];
-                let v11 = cube[23u * stride + z * config.nx * config.ny + min(iy + 1u, config.ny - 2u) * config.nx + min(ix + 1u, config.nx - 2u)];
+                let v00 = cube[b_in_base + z * config.nx * config.ny + iy * config.nx + ix];
+                let v10 = cube[b_in_base + z * config.nx * config.ny + iy * config.nx + min(ix + 1u, config.nx - 2u)];
+                let v01 = cube[b_in_base + z * config.nx * config.ny + min(iy + 1u, config.ny - 2u) * config.nx + ix];
+                let v11 = cube[b_in_base + z * config.nx * config.ny + min(iy + 1u, config.ny - 2u) * config.nx + min(ix + 1u, config.nx - 2u)];
 
                 let advected = (1.0 - fy) * ((1.0 - fx) * v00 + fx * v10) + fy * ((1.0 - fx) * v01 + fx * v11);
                 
                 var next = advected + config.bioDiffusion * lap + config.bioGrowth * bo * (1.0 - bo);
                 next = clamp(next, 0.0, 1.0);
                 
-                cube[24u * stride + idx] = next; // bio_next
+                cube[b_out_base + idx] = next; // bio_next
             }
 
-            @compute @workgroup_size(256)
-            fn copy_faces(@builtin(global_invocation_id) global_id: vec3<u32>) {
-                let idx = global_id.x;
-                if (idx >= config.nx * config.ny * config.nz) { return; }
-                let stride = config.strideFace;
-
-                // Swap LBM f (0-8) with f_post (9-17)
-                for (var k = 0u; k < 9u; k = k + 1u) {
-                    cube[k * stride + idx] = cube[(k + 9u) * stride + idx];
-                }
-
-                // Swap Bio
-                cube[23u * stride + idx] = cube[24u * stride + idx];
-            }
+            // copy_faces removed in favor of ping-pong
         `;
     }
 }

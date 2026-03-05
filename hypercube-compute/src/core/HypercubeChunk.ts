@@ -16,6 +16,10 @@ export class HypercubeChunk {
     public readonly z: number;
     private masterBuffer: HypercubeMasterBuffer;
 
+    // Async Readback / Double Buffering
+    private stagingBuffers: Map<string, GPUBuffer> = new Map();
+    private pendingSyncPromises: Promise<void>[] = [];
+
     constructor(x: number, y: number, nx: number, ny: number, nz: number = 1, masterBuffer: HypercubeMasterBuffer, numFaces: number = 6, z: number = 0) {
         this.x = x;
         this.y = y;
@@ -104,67 +108,65 @@ export class HypercubeChunk {
 
     /**
      * Rapatrie les données de la VRAM vers la RAM (Zero-Copy Host Buffer).
-     * Nécessaire pour la visualisation ou la validation CPU des résultats GPU.
-     * @param faceIndices Liste optionnelle des faces à synchroniser (ex: [22, 18]). Si vide, synchronise tout.
+     * @param faceIndices Liste optionnelle des faces à synchroniser.
+     * @param block Si vrai, attend la fin du transfert (comportement par défaut).
      */
-    async syncToHost(faceIndices?: number[]) {
+    async syncToHost(faceIndices?: number[], block: boolean = true) {
         if (!this.gpuBuffer) return;
 
         const device = HypercubeGPUContext.device;
 
-        if (!faceIndices || faceIndices.length === 0) {
-            // Synchronisation complète (comportement original)
-            const totalSize = this.faces.length * this.stride;
-            const stagingBuffer = device.createBuffer({
-                size: totalSize,
-                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-            });
+        // Si on a des promesses en cours d'une frame précédente, on les attend d'abord
+        if (this.pendingSyncPromises.length > 0) {
+            await Promise.all(this.pendingSyncPromises);
+            this.pendingSyncPromises = [];
+        }
 
-            const commandEncoder = device.createCommandEncoder();
-            commandEncoder.copyBufferToBuffer(this.gpuBuffer, 0, stagingBuffer, 0, totalSize);
-            device.queue.submit([commandEncoder.finish()]);
+        const commandEncoder = device.createCommandEncoder();
+        const activeStaging: { buffer: GPUBuffer, faceIdx: number, size: number }[] = [];
 
-            await stagingBuffer.mapAsync(GPUMapMode.READ);
-            const arrayBuffer = stagingBuffer.getMappedRange();
-            new Uint8Array(this.masterBuffer.buffer, this.offset, totalSize).set(new Uint8Array(arrayBuffer));
+        const facesToSync = faceIndices && faceIndices.length > 0 ? faceIndices : Array.from({ length: this.faces.length }, (_, i) => i);
 
-            stagingBuffer.unmap();
-            stagingBuffer.destroy();
-        } else {
-            // Synchronisation sélective par face
-            const commandEncoder = device.createCommandEncoder();
-            const stagingBuffers: { buffer: GPUBuffer, faceIdx: number, size: number }[] = [];
+        for (const faceIdx of facesToSync) {
+            if (faceIdx < 0 || faceIdx >= this.faces.length) continue;
 
-            for (const faceIdx of faceIndices) {
-                if (faceIdx < 0 || faceIdx >= this.faces.length) continue;
+            const faceSize = this.stride;
+            const key = `face_${faceIdx}`;
+            let stagingBuffer = this.stagingBuffers.get(key);
 
-                const faceSize = this.stride; // On garde le stride pour l'alignement
-                const stagingBuffer = device.createBuffer({
+            if (!stagingBuffer) {
+                stagingBuffer = device.createBuffer({
                     size: faceSize,
                     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
                 });
-
-                commandEncoder.copyBufferToBuffer(
-                    this.gpuBuffer, faceIdx * this.stride,
-                    stagingBuffer, 0,
-                    faceSize
-                );
-                stagingBuffers.push({ buffer: stagingBuffer, faceIdx, size: faceSize });
+                this.stagingBuffers.set(key, stagingBuffer);
             }
 
-            device.queue.submit([commandEncoder.finish()]);
+            commandEncoder.copyBufferToBuffer(
+                this.gpuBuffer, faceIdx * this.stride,
+                stagingBuffer, 0,
+                faceSize
+            );
+            activeStaging.push({ buffer: stagingBuffer, faceIdx, size: faceSize });
+        }
 
-            // Mappage parallèle de toutes les faces demandées
-            await Promise.all(stagingBuffers.map(sb => sb.buffer.mapAsync(GPUMapMode.READ)));
+        device.queue.submit([commandEncoder.finish()]);
 
-            for (const sb of stagingBuffers) {
-                const arrayBuffer = sb.buffer.getMappedRange();
-                const dstOffset = this.offset + (sb.faceIdx * this.stride);
-                new Uint8Array(this.masterBuffer.buffer, dstOffset, sb.size).set(new Uint8Array(arrayBuffer));
+        const syncProcess = async () => {
+            await Promise.all(activeStaging.map(as => as.buffer.mapAsync(GPUMapMode.READ)));
 
-                sb.buffer.unmap();
-                sb.buffer.destroy();
+            for (const as of activeStaging) {
+                const arrayBuffer = as.buffer.getMappedRange();
+                const dstOffset = this.offset + (as.faceIdx * this.stride);
+                new Uint8Array(this.masterBuffer.buffer, dstOffset, as.size).set(new Uint8Array(arrayBuffer));
+                as.buffer.unmap();
             }
+        };
+
+        if (block) {
+            await syncProcess();
+        } else {
+            this.pendingSyncPromises.push(syncProcess());
         }
     }
 
