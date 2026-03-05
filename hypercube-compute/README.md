@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/docs/assets/logo.png" alt="Hypercube Engine Logo" width="200" style="border-radius:20px;"/>
-  <h1>🌊 Hypercube Engine V4 🚀</h1>
+  <h1>🌊 Hypercube Engine V5 🚀</h1>
   <p><strong>A GodMode O(1) Tensor-based Compute Engine for Web & Node.js</strong></p>
   
   [![npm version](https://img.shields.io/npm/v/hypercube-compute.svg?style=flat-square)](https://www.npmjs.com/package/hypercube-compute)
@@ -26,27 +26,33 @@ If you are trying to implement **Cellular Automata, Fluid Dynamics (LBM), Heat D
 
 ---
 
-## 🚀 Native 3D Compute (NEW in V4)
+## 🚀 Native 3D Compute & High-Level API (V5)
 
-V4 introduces native 3D tensor support, allowing simulations to scale across `[nx, ny, nz]` dimensions while maintaining O(1) complexity.
+V5 introduces a **Unified Facade** that reduces boilerplate by 90%. You can now bootstrap a multi-chunk, multithreaded 3D simulation in a single line.
 
-### 🔥 Volume Diffusion Engine
-A specialized 3D solver with a 7-point stencil and periodic boundaries. 
-- **Hybrid Compute**: Support for both CPU (multithreaded) and **WebGPU hardware acceleration**.
-- **Dynamic Limits**: Adapts workgroup sizes (256 to 1024 threads) based on the physical GPU adapter limits.
-- **Applications**: Smoke, heat, chemical concentration, volumetric fog.
-- **Performance**: 64³ grid (262k voxels) processed in ~3ms on CPU and <1ms on GPU (compute only). 128³ grid remains playable at 60 FPS on compatible hardware.
+### 🔥 Unified Facade
+The `Hypercube` class automatically handles:
+- **MasterBuffer Allocation**: No more manual memory calculation.
+- **Engine Registration**: Instantiation via string IDs (`GrayScottEngine`, `OceanEngine`, etc.).
+- **Auto-Rendering**: Detects engine type (2D, 2.5D, 3D) and chooses the best renderer automatically.
 
-### 🎨 Visualization Helpers
-- **IsoRenderer**: 2.5D Isometric projection on Canvas 2D with depth sorting.
-- **MarchingCubes (Light)**: High-speed surface extraction for volumetric data.
-- **ThreeJS Bridge**: Easy export to `THREE.Data3DTexture` and `BufferGeometry`.
+### 🎨 5 Premium Showcases
+1.  **Aérodynamique 2D** : Simulation LBM avec Karman Vortex.
+2.  **Océan 2.5D** : Simulation isovolume isométrique.
+3.  **Diffusion Thermique 3D** : Laplacien 3D pur sur >200k cellules.
+4.  **Life Ecosystem** : Automate cellulaire à 4 états (Vide, Plante, Herbi, Carni).
+5.  **Gray-Scott Organic** : Morphogénèse (Turing patterns / Zèbre).
 
 ---
 
 ## 🚀 Built-in Engines (The Showcase)
 
 Hypercube comes out of the box with highly optimized, pre-built physics engines to demonstrate its power.
+
+### 🧪 Gray-Scott Reaction-Diffusion (Organic Turing Patterns)
+Simule des phénomènes de morphogénèse (taches de léopard, rayures de zèbre). C’est le test ultime de stabilité numérique pour un solver.
+- **Faces** : Face 0 (Substance A), Face 1 (Substance B).
+- **Paramètres** : `feed`, `kill`, `Da`, `Db`.
 
 ### 💨 Aerodynamics Engine (Lattice Boltzmann D2Q9)
 A fully continuous computational fluid dynamics solver. It forces "wind" through a wind tunnel using the BGK collision operator. You can draw obstacles into the `obstacles` tensor, and the fluid will realistically compress and flow around them, producing Von Kármán vortex streets.
@@ -158,24 +164,27 @@ npm install hypercube-compute
 
 ---
 
-## 💡 Quick Start: See the "Wow" in 20 Lines
-The easiest way to start is the **Game of Life** (O1 Ecosystem). Copy-paste this into an `index.ts`:
+## 💡 Quick Start: See the "Wow" in 10 Lines
+The easiest way to start is the **Game of Life** (O1 Ecosystem).
 
 ```typescript
-import { HypercubeGrid, HypercubeMasterBuffer, GameOfLifeEngine, HypercubeViz } from 'hypercube-compute';
+import { Hypercube } from 'hypercube-compute';
 
-// 1. Setup Canvas & Memory
-const canvas = document.querySelector('canvas')!;
-const master = new HypercubeMasterBuffer(); 
-const grid = await HypercubeGrid.create(1, 1, 128, master, () => new GameOfLifeEngine(), 3);
+// 1. Create Grid in 1 line (Multithreaded, 2x2 Chunks)
+const grid = await Hypercube.create({
+    engine: 'GameOfLifeEngine',
+    resolution: 256,
+    cols: 2, rows: 2,
+    workers: true
+});
 
 // 2. Main Loop
-const loop = () => {
-    grid.compute(); // Process tensor logic O(1)
+const canvas = document.querySelector('canvas')!;
+const loop = async () => {
+    await grid.compute(); // Distributed computation
     
-    // 3. Render directly (Face 2 = Organic Density/Age)
-    const faceData = grid.cubes[0][0].faces[2]; 
-    HypercubeViz.quickRender(canvas, faceData, 128); // Plug & Play!
+    // 3. Auto-Rendering (Chooses the best view automatically)
+    Hypercube.autoRender(grid, canvas, { faceIndex: 3 }); 
     
     requestAnimationFrame(loop);
 };
