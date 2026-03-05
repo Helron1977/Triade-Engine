@@ -44,7 +44,7 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
     private parity: number = 0;
     public gpuEnabled: boolean = false;
 
-    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         this.lastStride = stride / 4;
         const shaderModule = device.createShaderModule({ code: this.getWgslSource() });
 
@@ -61,12 +61,12 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
             compute: { module: shaderModule, entryPoint: 'compute_heat' }
         });
 
-        const uniformSize = 8 * 4; // 8 floats/uints
+        const uniformSize = 8 * 4;
         const uniformData = new ArrayBuffer(uniformSize);
         const u32 = new Uint32Array(uniformData);
         const f32 = new Float32Array(uniformData);
 
-        u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride; // strideFace
+        u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride;
         f32[4] = this.alpha;
         u32[5] = this.parity;
 
@@ -76,19 +76,11 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
         });
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-        this.bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [
-                { binding: 0, resource: { buffer: cubeBuffer } },
-                { binding: 1, resource: { buffer: this.uniformBuffer } }
-            ]
-        });
-
         this.gpuEnabled = true;
     }
 
-    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup || !this.pipelineHD || !this.uniformBuffer) return;
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
+        if (!this.pipelineHD || !this.uniformBuffer) return;
 
         const uniformSize = 8 * 4;
         const uniformData = new ArrayBuffer(uniformSize);
@@ -100,13 +92,21 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
         u32[5] = this.parity;
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-        this.parity = 1 - this.parity;
+        const bindGroup = device.createBindGroup({
+            layout: this.pipelineHD.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: readBuffer } },
+                { binding: 1, resource: { buffer: this.uniformBuffer } }
+            ]
+        });
 
         const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setBindGroup(0, this.bindGroup);
+        passEncoder.setBindGroup(0, bindGroup);
         passEncoder.setPipeline(this.pipelineHD);
         passEncoder.dispatchWorkgroups(Math.ceil(nx / 8), Math.ceil(ny / 8), Math.ceil(nz / 8));
         passEncoder.end();
+
+        this.parity = 1 - this.parity;
     }
 
     compute(

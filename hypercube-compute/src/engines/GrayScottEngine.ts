@@ -60,16 +60,15 @@ export class GrayScottEngine implements IHypercubeEngine {
         faces[1].fill(0.0);
     }
 
-    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         this.lastStride = stride / 4;
-        const wgSizeX = 16;
-        const wgSizeY = 16;
         const shaderModule = device.createShaderModule({ code: this.getWgslSource() });
 
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
-                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
             ]
         });
         const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
@@ -79,7 +78,18 @@ export class GrayScottEngine implements IHypercubeEngine {
             compute: { module: shaderModule, entryPoint: 'compute_gs' }
         });
 
-        const uniformSize = 12 * 4; // u32[0-3], f32[4-7], u32[8], pad[9-11]
+        this.uniformBuffer = device.createBuffer({
+            size: 64,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        this.gpuEnabled = true;
+    }
+
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
+        if (!this.pipelineGS || !this.uniformBuffer) return;
+
+        const uniformSize = 16 * 4;
         const uniformData = new ArrayBuffer(uniformSize);
         const u32 = new Uint32Array(uniformData);
         const f32 = new Float32Array(uniformData);
@@ -87,45 +97,24 @@ export class GrayScottEngine implements IHypercubeEngine {
         u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride;
         f32[4] = this.Da; f32[5] = this.Db; f32[6] = this.feed; f32[7] = this.kill;
         u32[8] = this.parity;
-
-        this.uniformBuffer = device.createBuffer({
-            size: uniformData.byteLength,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-        this.bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
+        const bindGroup = device.createBindGroup({
+            layout: this.pipelineGS.getBindGroupLayout(0),
             entries: [
-                { binding: 0, resource: { buffer: cubeBuffer } },
-                { binding: 1, resource: { buffer: this.uniformBuffer } }
+                { binding: 0, resource: { buffer: readBuffer } },
+                { binding: 1, resource: { buffer: writeBuffer } },
+                { binding: 2, resource: { buffer: this.uniformBuffer } }
             ]
         });
 
-        this.gpuEnabled = true;
-    }
-
-    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup || !this.pipelineGS || !this.uniformBuffer) return;
-
-        const uniformData = new ArrayBuffer(12 * 4);
-        const u32 = new Uint32Array(uniformData);
-        const f32 = new Float32Array(uniformData);
-
-        u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride; // strideFace
-        f32[4] = this.Da; f32[5] = this.Db; f32[6] = this.feed; f32[7] = this.kill;
-        u32[8] = this.parity;
-        device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
-
-        this.parity = 1 - this.parity;
-
         const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setBindGroup(0, this.bindGroup);
-
+        passEncoder.setBindGroup(0, bindGroup);
         passEncoder.setPipeline(this.pipelineGS);
         passEncoder.dispatchWorkgroups(Math.ceil(nx / 16), Math.ceil(ny / 16), nz || 1);
-
         passEncoder.end();
+
+        this.parity = 1 - this.parity;
     }
 
     public compute(faces: Float32Array[], nx: number, ny: number, nz: number): void {
@@ -167,8 +156,9 @@ export class GrayScottEngine implements IHypercubeEngine {
                 parity: u32, pad1: f32, pad2: f32, pad3: f32
             };
 
-            @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
-            @group(0) @binding(1) var<uniform> config: Uniforms;
+            @group(0) @binding(0) var<storage, read> cube_in: array<f32>;
+            @group(0) @binding(1) var<storage, read_write> cube_out: array<f32>;
+            @group(0) @binding(2) var<uniform> config: Uniforms;
 
             @compute @workgroup_size(16, 16, 1)
             fn compute_gs(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -185,12 +175,12 @@ export class GrayScottEngine implements IHypercubeEngine {
                 let face_Anext = (1u - config.parity) * 2u * stride;
                 let face_Bnext = ((1u - config.parity) * 2u + 1u) * stride;
 
-                let a = cube[face_A + idx];
-                let b = cube[face_B + idx];
+                let a = cube_in[face_A + idx];
+                let b = cube_in[face_B + idx];
 
                 if (x == 0u || x == config.nx - 1u || y == 0u || y == config.ny - 1u) {
-                    cube[face_Anext + idx] = a;
-                    cube[face_Bnext + idx] = b;
+                    cube_out[face_Anext + idx] = a;
+                    cube_out[face_Bnext + idx] = b;
                     return;
                 }
 
@@ -199,16 +189,14 @@ export class GrayScottEngine implements IHypercubeEngine {
                 let top = idx - config.nx;
                 let bottom = idx + config.nx;
 
-                let lapA = (cube[face_A + left] + cube[face_A + right] + cube[face_A + top] + cube[face_A + bottom] - 4.0 * a);
-                let lapB = (cube[face_B + left] + cube[face_B + right] + cube[face_B + top] + cube[face_B + bottom] - 4.0 * b);
+                let lapA = (cube_in[face_A + left] + cube_in[face_A + right] + cube_in[face_A + top] + cube_in[face_A + bottom] - 4.0 * a);
+                let lapB = (cube_in[face_B + left] + cube_in[face_B + right] + cube_in[face_B + top] + cube_in[face_B + bottom] - 4.0 * b);
 
                 let react = a * b * b;
 
-                cube[face_Anext + idx] = a + (config.Da * lapA - react + config.feed * (1.0 - a));
-                cube[face_Bnext + idx] = b + (config.Db * lapB + react - (config.feed + config.kill) * b);
+                cube_out[face_Anext + idx] = a + (config.Da * lapA - react + config.feed * (1.0 - a));
+                cube_out[face_Bnext + idx] = b + (config.Db * lapB + react - (config.feed + config.kill) * b);
             }
-
-            // copy_faces removed
         `;
     }
 }

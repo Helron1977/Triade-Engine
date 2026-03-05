@@ -259,7 +259,7 @@ export class HypercubeCpuGrid {
         const nx = this.nx;
         const ny = this.ny;
         const nz = this.nz;
-        const stride = nx * ny * nz * 4; // Total face size in bytes
+        const stride = this.cubes[0][0]!.stride; // ── GPU REFACTO V5.4 ── Utilisation du stride réel avec padding
         const rowSize = nx * 4;
         const innerRowSize = (nx - 2) * 4;
         const faceOffset = f * stride;

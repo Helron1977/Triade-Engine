@@ -79,9 +79,9 @@ export class EngineRegistry {
 
 EngineRegistry.register('Heatmap (O1 Spatial Convolution)', HeatmapEngine, ['2d']);
 EngineRegistry.register('FlowFieldEngine-V12', FlowFieldEngine, ['2d']);
-EngineRegistry.register('Simplified Fluid Dynamics', FluidEngine, ['2d']);
+EngineRegistry.register('Fluid Engine (O1 Tensor Nav-Stokes)', FluidEngine, ['2d']);
 EngineRegistry.register('Aerodynamics LBM D2Q9', AerodynamicsEngine, ['2d', 'lbm']);
-EngineRegistry.register('OceanEngine', OceanEngine, ['2.5d', 'iso', 'lbm']);
+EngineRegistry.register('OceanEngine 2.5D', OceanEngine, ['2.5d', 'iso', 'lbm']);
 EngineRegistry.register('HeatDiffusionEngine3D', HeatDiffusionEngine3D, ['3d', 'slice']);
 EngineRegistry.register('Volume Diffusion (3D Stencil)', VolumeDiffusionEngine, ['3d', 'slice']);
 EngineRegistry.register('GameOfLifeEngine', GameOfLifeEngine, ['2d', 'cellular']);

@@ -1,172 +1,142 @@
-/**
- * HypercubeGPUContext – Singleton pour initialiser WebGPU.
- * Gère Adapter, Device, buffers et cleanup.
- */
+import type { HypercubeChunk } from '../HypercubeChunk';
+
 export class HypercubeGPUContext {
     private static _device: GPUDevice | null = null;
     private static _adapter: GPUAdapter | null = null;
-    private static _isSupported: boolean | null = null;
-    private static _preferredFormat: GPUTextureFormat = 'bgra8unorm'; // fallback
 
-    static get isSupported(): boolean {
-        if (this._isSupported === null) {
-            this._isSupported = typeof navigator !== 'undefined' && 'gpu' in navigator;
-            if (this.isSupported) {
-                this._preferredFormat = navigator.gpu.getPreferredCanvasFormat?.() ?? 'bgra8unorm';
-            }
-        }
-        return this._isSupported;
-    }
-
-    static get device(): GPUDevice {
+    public static get device(): GPUDevice {
         if (!this._device) {
-            throw new Error("[Hypercube GPU] GPUDevice non initialisé. Appelez init() d'abord.");
+            throw new Error("[HypercubeGPUContext] WebGPU device n'est pas initialisé. Appelez HypercubeGPUContext.init() d'abord.");
         }
         return this._device;
     }
 
-    static get preferredFormat(): GPUTextureFormat {
-        return this._preferredFormat;
-    }
-
-    /**
-     * Initialise WebGPU (Adapter + Device).
-     * @param options Options pour requestAdapter / requestDevice
-     */
-    static async init(options: GPURequestAdapterOptions = {}): Promise<boolean> {
-        if (!this.isSupported) {
-            console.warn("[Hypercube GPU] WebGPU non supporté.");
+    static async init(): Promise<boolean> {
+        if (!navigator.gpu) {
+            console.error("[HypercubeGPUContext] WebGPU n'est pas supporté par ce navigateur.");
             return false;
         }
 
-        if (this._device) return true;
+        this._adapter = await navigator.gpu.requestAdapter();
+        if (!this._adapter) {
+            console.error("[HypercubeGPUContext] Impossible d'obtenir un GPUAdapter.");
+            return false;
+        }
 
-        try {
-            this._adapter = await navigator.gpu.requestAdapter(options);
-            if (!this._adapter) {
-                console.warn("[Hypercube GPU] Aucun adaptateur trouvé.");
-                return false;
+        this._device = await this._adapter.requestDevice({
+            label: 'Hypercube GPU Device',
+            requiredLimits: {
+                maxStorageBufferBindingSize: 1_073_741_824, // 1GB (utile pour gros grids)
             }
-
-            // Required limits/features (exemple extensible)
-            const requiredFeatures: GPUFeatureName[] = [];
-            const requiredLimits: Record<string, number> = {
-                maxComputeInvocationsPerWorkgroup: this._adapter.limits.maxComputeInvocationsPerWorkgroup,
-                maxComputeWorkgroupSizeX: this._adapter.limits.maxComputeWorkgroupSizeX,
-                maxComputeWorkgroupSizeY: this._adapter.limits.maxComputeWorkgroupSizeY,
-                maxComputeWorkgroupSizeZ: this._adapter.limits.maxComputeWorkgroupSizeZ,
-            };
-
-            this._device = await this._adapter.requestDevice({
-                requiredFeatures,
-                requiredLimits,
-            });
-
-            // Gestion perte device
-            this._device.lost.then((info) => {
-                console.error(`[Hypercube GPU] Device perdu: ${info.message} (${info.reason})`);
-                this._device = null;
-                this._adapter = null;
-            });
-
-            return true;
-        } catch (err) {
-            console.error("[Hypercube GPU] Init échouée:", err);
-            return false;
-        }
-    }
-
-    /**
-     * Crée un storage buffer à partir de Float32Array.
-     * @param data Données initiales
-     * @param mappedAtCreation Utiliser mappedAtCreation (true) ou writeBuffer (false)
-     */
-    static createStorageBuffer(data: Float32Array, mappedAtCreation: boolean = true): GPUBuffer {
-        const buffer = this.device.createBuffer({
-            size: data.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-            mappedAtCreation,
         });
 
-        if (mappedAtCreation) {
-            new Float32Array(buffer.getMappedRange()).set(data as any);
-            buffer.unmap();
-        } else {
-            this.device.queue.writeBuffer(buffer, 0, data as any);
-        }
-
-        return buffer;
+        console.info("[HypercubeGPUContext] WebGPU initialisé avec succès.");
+        return true;
     }
 
-    /**
-     * Crée un uniform buffer dynamique.
-     * @param data ArrayBuffer ou une vue typée
-     */
-    static createUniformBuffer(data: ArrayBuffer | { byteLength: number }): GPUBuffer {
-        const buffer = this.device.createBuffer({
-            size: Math.ceil(data.byteLength / 16) * 16, // align 16 bytes
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    // ── GPU REFACTO V5.4 ──
+    static createComputePipeline(wgslSource: string, label = 'Compute Pipeline'): GPUComputePipeline {
+        const shaderModule = this.device.createShaderModule({
+            code: wgslSource,
+            label: `${label} Shader`
         });
-        const actualData = 'buffer' in data ? (data as any) : data;
-        this.device.queue.writeBuffer(buffer, 0, actualData);
-        return buffer;
-    }
 
-    /**
-     * Compile un WGSL en Compute Pipeline.
-     */
-    static createComputePipeline(wgslCode: string, entryPoint: string): GPUComputePipeline {
-        const module = this.device.createShaderModule({ code: wgslCode });
         return this.device.createComputePipeline({
+            label,
             layout: 'auto',
-            compute: { module, entryPoint },
+            compute: {
+                module: shaderModule,
+                entryPoint: 'main'
+            }
         });
     }
 
-    /**
-     * Nettoyage complet (pour hot-reload ou tab close).
-     */
-    static destroy(): void {
-        if (this._device) {
-            this._device.destroy();
-            this._device = null;
+    static createStorageBuffer(size: number, usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC): GPUBuffer {
+        return this.device.createBuffer({
+            size: Math.ceil(size / 4) * 4,
+            usage,
+            label: 'Hypercube Storage Buffer'
+        });
+    }
+
+    // ── GPU REFACTO V5.4 ──
+    static createPingPongBindGroup(
+        pipeline: GPUComputePipeline,
+        readBuffer: GPUBuffer,
+        writeBuffer: GPUBuffer,
+        uniformBuffer?: GPUBuffer
+    ): GPUBindGroup {
+        const entries: GPUBindGroupEntry[] = [
+            { binding: 0, resource: { buffer: readBuffer } },   // read only
+            { binding: 1, resource: { buffer: writeBuffer } }   // read_write
+        ];
+
+        if (uniformBuffer) {
+            entries.push({ binding: 2, resource: { buffer: uniformBuffer } });
         }
+
+        return this.device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries
+        });
+    }
+
+    // ── GPU REFACTO V5.4 ──
+    /**
+     * Copie optimisée de frontières entre chunks GPU (utilisé par synchronizeBoundariesGPU)
+     */
+    static gpuCopyBoundary(
+        encoder: GPUCommandEncoder,
+        srcBuffer: GPUBuffer,
+        dstBuffer: GPUBuffer,
+        srcByteOffset: number,
+        dstByteOffset: number,
+        byteSize: number,
+        rowCount: number = 1,
+        srcStride: number = 0,
+        dstStride: number = 0
+    ) {
+        if (rowCount <= 1) {
+            encoder.copyBufferToBuffer(srcBuffer, srcByteOffset, dstBuffer, dstByteOffset, byteSize);
+        } else {
+            for (let i = 0; i < rowCount; i++) {
+                encoder.copyBufferToBuffer(
+                    srcBuffer,
+                    srcByteOffset + i * srcStride,
+                    dstBuffer,
+                    dstByteOffset + i * dstStride,
+                    byteSize
+                );
+            }
+        }
+    }
+
+    // ── GPU REFACTO V5.4 ──
+    /** Debug only - Ne jamais appeler dans la boucle principale */
+    static async debugReadback(buffer: GPUBuffer, size: number): Promise<Float32Array> {
+        const staging = this.device.createBuffer({
+            size,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+            label: 'Debug Readback Staging'
+        });
+
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(buffer, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+
+        await staging.mapAsync(GPUMapMode.READ);
+        const data = new Float32Array(staging.getMappedRange().slice(0));
+        staging.unmap();
+        staging.destroy();
+
+        return data;
+    }
+
+    // ── GPU REFACTO V5.4 ──
+    static destroy() {
+        // À appeler lors du cleanup de l'application
+        this._device?.destroy();
+        this._device = null;
         this._adapter = null;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

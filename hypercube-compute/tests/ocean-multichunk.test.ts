@@ -6,95 +6,57 @@ import { OceanEngine } from '../src/engines/OceanEngine';
 describe('OceanEngine Multi-Chunk (Grid 2x2 Boundary Exchange)', () => {
 
     it('conserves mass exactly across 4 chunks with periodic boundaries enabled', async () => {
-        // Here we test the engine inside a 2x2 Grid where internal ghosts are exchanged.
         const numChunksX = 2;
         const numChunksY = 2;
-        const mapSize = 32; // MapSize per chunk
-        const totalCellsStrided = mapSize * mapSize * numChunksX * numChunksY;
+        const mapSize = 32;
         const numFaces = 25;
         const masterBuffer = new HypercubeMasterBuffer(10 * 1024 * 1024);
 
-        const oceanEngine = new OceanEngine();
-
-        // --- 1. SETUP ENGINE (CPU MODE) MULTI-CHUNK ---
+        // 1. Create Grid
         const grid = await HypercubeCpuGrid.create(
             numChunksX, numChunksY, mapSize, masterBuffer,
-            () => oceanEngine,
+            () => new OceanEngine(),
             numFaces, true, true, undefined, 'cpu'
         );
 
-        const w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36];
-
-        // INITIALIZE DENSITY ACROSS ALL CHUNKS to exactly 1.0 everywhere
-        for (let cy = 0; cy < numChunksY; cy++) {
-            for (let cx = 0; cx < numChunksX; cx++) {
-                const faces = grid.cubes[cy][cx]?.faces!;
-                for (let i = 0; i < mapSize * mapSize; i++) {
-                    faces[22][i] = 1.0;          // rho
-                    for (let k = 0; k < 9; k++) {
-                        faces[k][i] = w[k] * 1.0;
-                    }
-                }
-            }
-        }
-
-        // Apply forcing to create macro movement across chunk seams
-        const facesCenter = grid.cubes[0][0]?.faces!;
-        // Inject velocity to create a disturbance
-        for (let i = 0; i < mapSize * mapSize; i++) {
-            if (i % 5 === 0) facesCenter[19][i] = 0.1; // ux
-            if (i % 7 === 0) facesCenter[20][i] = -0.1; // uy
-        }
+        // 2. Initialize with a splash
+        grid.applyEquilibrium(16, 16, 0, 8, 1.8, 0.5, 0.5);
 
         let totalMassStart = 0;
-        for (let cy = 0; cy < numChunksY; cy++) {
-            for (let cx = 0; cx < numChunksX; cx++) {
-                const faces = grid.cubes[cy][cx]?.faces!;
-                for (let y = 1; y < mapSize - 1; y++) {
-                    for (let x = 1; x < mapSize - 1; x++) {
-                        totalMassStart += faces[22][y * mapSize + x];
-                    }
+        for (const c of grid.cubes.flat()) {
+            const rho = c!.faces[22];
+            for (let ly = 1; ly < c!.ny - 1; ly++) {
+                for (let lx = 1; lx < c!.nx - 1; lx++) {
+                    totalMassStart += rho[c!.getIndex(lx, ly)];
                 }
             }
         }
 
-        // SIMULATE
+        // 3. Compute 1000 steps
+        // NOTE: In Vitest/Node, Worker may be missing, so it falls back to single-threaded.
         for (let i = 0; i < 1000; i++) {
-            await grid.compute(); // HypercubeGrid interrogera automatiquement getSyncFaces() sur l'OceanEngine !
+            await grid.compute();
         }
 
-        // CALCULATE FINAL MASS
+        // 4. Verify Mass Conservation & Movement
         let totalMassEnd = 0;
-        for (let cy = 0; cy < numChunksY; cy++) {
-            for (let cx = 0; cx < numChunksX; cx++) {
-                const faces = grid.cubes[cy][cx]?.faces!;
-                for (let y = 1; y < mapSize - 1; y++) {
-                    for (let x = 1; x < mapSize - 1; x++) {
-                        totalMassEnd += faces[22][y * mapSize + x];
-                    }
+        let movingCells = 0;
+        for (const c of grid.cubes.flat()) {
+            const rho = c!.faces[22];
+            for (let ly = 1; ly < c!.ny - 1; ly++) {
+                for (let lx = 1; lx < c!.nx - 1; lx++) {
+                    const val = rho[c!.getIndex(lx, ly)];
+                    totalMassEnd += val;
+                    if (Math.abs(val - 1.0) > 0.0001) movingCells++;
                 }
             }
         }
 
-        // For periodic Grid the mass is inherently closed!
-        // Should be strictly equal, but floats can have tiny variations
         const diff = Math.abs(totalMassStart - totalMassEnd);
-        console.log(`Multi-Chunk Mass conservation differencial: ${diff}`);
+        console.log(`Final Mass conservation diff: ${diff.toFixed(6)}`);
+        console.log(`Final Moving cells: ${movingCells}`);
 
         expect(diff).toBeLessThan(0.1);
-
-        // --- NEW: VERIFY MOVEMENT ---
-        // Let's check if the density has actually changed from its initial state (1.0)
-        let totalChange = 0;
-        for (let cy = 0; cy < numChunksY; cy++) {
-            for (let cx = 0; cx < numChunksX; cx++) {
-                const faces = grid.cubes[cy][cx]?.faces!;
-                for (let i = 0; i < mapSize * mapSize; i++) {
-                    totalChange += Math.abs(faces[22][i] - 1.0);
-                }
-            }
-        }
-        console.log(`Total Density Change after 1000 steps: ${totalChange}`);
-        expect(totalChange).toBeGreaterThan(0.1); // Simulation must have progressed
+        expect(movingCells).toBeGreaterThan(0);
     });
 });

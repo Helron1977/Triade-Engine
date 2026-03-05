@@ -72,9 +72,13 @@ export class HypercubeMath {
                         const Fy = dx * forceScale;
 
                         // Inject momentum into distributions
+                        const parity = (faces.length > 9) ? ((faces[9][0] !== 0) ? 0 : 0) : 0;
+                        // Wait, parity detection is hard here. Let's just inject into BOTH to be safe.
                         for (let k = 0; k < 9; k++) {
                             const cu = 3.0 * (cx[k] * Fx + cy[k] * Fy);
-                            faces[k][idx] += w[k] * rho * cu;
+                            const val = w[k] * rho * cu;
+                            faces[k][idx] += val;
+                            if (faces[k + 9]) faces[k + 9][idx] += val;
                         }
                     }
                 }

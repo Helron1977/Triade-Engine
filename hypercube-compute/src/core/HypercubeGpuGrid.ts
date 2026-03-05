@@ -4,9 +4,8 @@ import type { IHypercubeEngine } from '../engines/IHypercubeEngine';
 import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
 
 /**
- * HypercubeGpuGrid manages the WebGPU dispatch pipeline.
- * Unlike CPU Multithreading which chunks data per core, WebGPU prefers massive uniform arrays.
- * This Grid delegates ComputeEncoder dispatch to the engines.
+ * HypercubeGpuGrid - Version V5.4
+ * Gestionnaire de grille GPU avec vrai double-buffering + boundary exchange en VRAM.
  */
 export class HypercubeGpuGrid {
     public cubes: (HypercubeChunk | null)[][] = [];
@@ -21,6 +20,8 @@ export class HypercubeGpuGrid {
         computeTimeMs: 0,
         syncTimeMs: 0
     };
+
+    public isPeriodic: boolean = true;
 
     constructor(
         cols: number,
@@ -49,22 +50,17 @@ export class HypercubeGpuGrid {
         const requiredFaces = tempEngine.getRequiredFaces();
         const finalNumFaces = Math.max(numFaces, requiredFaces);
 
-        // Allocate cubes structurally but GPU memory logic handles them as unified 
         for (let y = 0; y < rows; y++) {
             this.cubes[y] = [];
             for (let x = 0; x < cols; x++) {
                 const cube = new HypercubeChunk(x, y, this.nx, this.ny, this.nz, masterBuffer, finalNumFaces);
-                const engineInstance = y === 0 && x === 0 ? tempEngine : engineFactory();
+                const engineInstance = (y === 0 && x === 0) ? tempEngine : engineFactory();
                 cube.setEngine(engineInstance);
-                // We do NOT init CPU arrays because GPU mode works directly on VRAM later.
                 this.cubes[y][x] = cube;
             }
         }
     }
 
-    /**
-     * Instantiates the GPU Context and compiles the shader pipelines.
-     */
     static async create(
         cols: number,
         rows: number,
@@ -75,9 +71,7 @@ export class HypercubeGpuGrid {
     ): Promise<HypercubeGpuGrid> {
 
         const success = await HypercubeGPUContext.init();
-        if (!success) {
-            throw new Error("[HypercubeGpuGrid] Impossible to initialize WebGPU Context. Hardware unsupported.");
-        }
+        if (!success) throw new Error("WebGPU initialization failed");
 
         const grid = new HypercubeGpuGrid(cols, rows, resolution, masterBuffer, engineFactory, numFaces);
 
@@ -90,35 +84,119 @@ export class HypercubeGpuGrid {
         return grid;
     }
 
-    /**
-     * Submits a CommandEncoder queue for GPU compute shaders.
-     */
+    // ── GPU REFACTO V5.4 ── Zero-Readback Compute Pipeline
     async compute() {
         const start = performance.now();
-        const commandEncoder = HypercubeGPUContext.device.createCommandEncoder();
+        const device = HypercubeGPUContext.device;
+        const encoder = device.createCommandEncoder({ label: 'Hypercube Full GPU Pass' });
 
+        // 1. Compute local sur tous les chunks
         for (let y = 0; y < this.rows; y++) {
             for (let x = 0; x < this.cols; x++) {
                 const cube = this.cubes[y][x];
-                if (cube && cube.engine && cube.engine.computeGPU) {
-                    // Dispatch the GPU pipeline
-                    cube.engine.computeGPU(HypercubeGPUContext.device, commandEncoder, cube.nx, cube.ny, cube.nz);
+                if (cube?.engine?.computeGPU) {
+                    cube.engine.computeGPU(
+                        device,
+                        encoder,
+                        cube.nx,
+                        cube.ny,
+                        cube.nz,
+                        cube.gpuReadBuffer!,
+                        cube.gpuWriteBuffer!
+                    );
                 }
             }
         }
 
-        // Send to GPU queue
-        HypercubeGPUContext.device.queue.submit([commandEncoder.finish()]);
+        // 2. Synchronisation des frontières directement en VRAM
+        if (this.cols > 1 || this.rows > 1) {
+            this.synchronizeBoundariesGPU(encoder);
+        }
 
-        // Await GPU ? Actually, WebGPU queue submission is asynchronous but we might want device.queue.onSubmittedWorkDone()
-        // Here we just record the submission time.
+        // 3. Soumission de tout le travail GPU en une seule queue
+        device.queue.submit([encoder.finish()]);
+
+        // 4. Swap des buffers (très peu coûteux)
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                const cube = this.cubes[y][x];
+                if (cube) {
+                    cube.swapGPUBuffers();
+                    // On synchronise la parité logique du moteur (CRITIQUE pour OceanEngine V5.4)
+                    if (cube.engine && 'parity' in cube.engine) {
+                        (cube.engine as any).parity = cube.gpuParity;
+                    }
+                }
+            }
+        }
+
         this.stats.computeTimeMs = performance.now() - start;
-        this.stats.syncTimeMs = 0; // GPU manages its own memory
+    }
+
+    // ── GPU REFACTO V5.4 ── Boundary Exchange 100% GPU
+    private synchronizeBoundariesGPU(encoder: GPUCommandEncoder) {
+        const facesToSync = this.cubes[0][0]?.engine?.getSyncFaces?.() ?? [0];
+
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                const cube = this.cubes[y][x]!;
+                if (!cube.gpuWriteBuffer) continue;
+
+                const fOffset = (f: number) => f * cube.stride;
+
+                // Right neighbor
+                if (this.isPeriodic || x < this.cols - 1) {
+                    const right = this.cubes[y][(x + 1) % this.cols]!;
+                    for (const f of facesToSync) {
+                        HypercubeGPUContext.gpuCopyBoundary(
+                            encoder,
+                            cube.gpuWriteBuffer,
+                            right.gpuWriteBuffer!,
+                            fOffset(f) + (cube.nx - 2) * 4,   // dernier float valide
+                            fOffset(f) + 0,                    // premier float du voisin
+                            4,                                 // 1 float
+                            cube.ny - 2,                       // nombre de lignes
+                            cube.nx * 4,                       // stride source
+                            cube.nx * 4                        // stride dest
+                        );
+                    }
+                }
+
+                // Bottom neighbor (similaire)
+                if (this.isPeriodic || y < this.rows - 1) {
+                    const bottom = this.cubes[(y + 1) % this.rows][x]!;
+                    for (const f of facesToSync) {
+                        HypercubeGPUContext.gpuCopyBoundary(
+                            encoder,
+                            cube.gpuWriteBuffer,
+                            bottom.gpuWriteBuffer!,
+                            fOffset(f) + (cube.ny - 2) * cube.nx * 4,
+                            fOffset(f) + 0,
+                            cube.nx * 4,
+                            1,
+                            0,
+                            0
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    public syncAllToHost(faceIndices?: number[]) {
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                this.cubes[y][x]?.syncToHost(faceIndices, false);
+            }
+        }
     }
 
     public destroy() {
-        if (HypercubeGPUContext.device) {
-            HypercubeGPUContext.device.destroy();
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                this.cubes[y][x]?.destroy();
+            }
         }
+        HypercubeGPUContext.destroy();
     }
 }

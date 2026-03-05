@@ -7,20 +7,32 @@ export class HypercubeChunk {
     public readonly ny: number;
     public readonly nz: number;
     public readonly faces: Float32Array[] = [];
-    public gpuBuffer: GPUBuffer | null = null; // Un seul buffer contigu pour le GPU (V3 GodMode)
+
+    // ── GPU REFACTO V5.4 ── Double Buffering propre
+    public gpuReadBuffer: GPUBuffer | null = null;   // Buffer actuellement lu par le renderer + prochain compute
+    public gpuWriteBuffer: GPUBuffer | null = null;  // Buffer dans lequel le compute écrit
+    public gpuParity: number = 0;                    // 0 = read, 1 = write
+
+    /** @deprecated Use gpuReadBuffer instead */
+    public get gpuBuffer(): GPUBuffer | null {
+        return this.gpuReadBuffer;
+    }
+
     public readonly offset: number;
-    public readonly stride: number; // Exposé pour la WorkerPool
+    public readonly stride: number;
     public engine: IHypercubeEngine | null = null;
     public readonly x: number;
     public readonly y: number;
     public readonly z: number;
     private masterBuffer: HypercubeMasterBuffer;
 
-    // Async Readback / Double Buffering
-    private stagingBuffers: Map<string, GPUBuffer> = new Map();
-    private pendingSyncPromises: Promise<void>[] = [];
+    // ── GPU REFACTO V5.4 ── Staging buffer partagé (un seul par chunk, réutilisé)
+    private stagingBuffer: GPUBuffer | null = null;
 
-    constructor(x: number, y: number, nx: number, ny: number, nz: number = 1, masterBuffer: HypercubeMasterBuffer, numFaces: number = 6, z: number = 0) {
+    constructor(
+        x: number, y: number, nx: number, ny: number, nz: number = 1,
+        masterBuffer: HypercubeMasterBuffer, numFaces: number = 6, z: number = 0
+    ) {
         this.x = x;
         this.y = y;
         this.z = z;
@@ -34,29 +46,17 @@ export class HypercubeChunk {
         this.stride = allocation.stride;
 
         const floatCount = nx * ny * nz;
-
         for (let i = 0; i < numFaces; i++) {
             this.faces.push(
-                new Float32Array(
-                    masterBuffer.buffer,
-                    this.offset + (i * this.stride),
-                    floatCount
-                )
+                new Float32Array(masterBuffer.buffer, this.offset + (i * this.stride), floatCount)
             );
         }
     }
 
-    /**
-     * Retourne l'index linéaire pour une position (x, y, z) locale au chunk.
-     */
     public getIndex(lx: number, ly: number, lz: number = 0): number {
         return (lz * this.ny * this.nx) + (ly * this.nx) + lx;
     }
 
-    /**
-     * Extrait une tranche 2D (Slice Z) d'une face spécifique.
-     * @returns Un Float32Array (copie) représentant la couche demandée.
-     */
     public getSlice(faceIndex: number, lz: number): Float32Array {
         const sliceSize = this.nx * this.ny;
         const offset = lz * sliceSize;
@@ -67,176 +67,120 @@ export class HypercubeChunk {
         this.engine = engine;
     }
 
-    /**
-     * Initialise la contrepartie GPU (VRAM) de ce Cube Logiciel.
-     * Appelé par le HypercubeGrid lors de sa création en mode 'webgpu'.
-     */
+    // ── GPU REFACTO V5.4 ──
     initGPU() {
         if (!this.engine) return;
 
         const totalSize = this.faces.length * this.stride;
+        const device = HypercubeGPUContext.device;
 
-        this.gpuBuffer = HypercubeGPUContext.device.createBuffer({
-            size: totalSize,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
-        });
+        this.gpuReadBuffer = HypercubeGPUContext.createStorageBuffer(totalSize);
+        this.gpuWriteBuffer = HypercubeGPUContext.createStorageBuffer(totalSize);
 
-        // Upload initial des données (Faces + Padding)
-        (HypercubeGPUContext.device.queue as any).writeBuffer(
-            this.gpuBuffer,
-            0,
-            this.masterBuffer.buffer,
-            this.offset,
-            totalSize
-        );
+        // Upload initial des données CPU vers les deux buffers
+        device.queue.writeBuffer(this.gpuReadBuffer, 0, this.masterBuffer.buffer, this.offset, totalSize);
+        device.queue.writeBuffer(this.gpuWriteBuffer, 0, this.masterBuffer.buffer, this.offset, totalSize);
 
-        // Informer le moteur mathématique
         if (this.engine.initGPU) {
-            this.engine.initGPU(HypercubeGPUContext.device, this.gpuBuffer, this.stride, this.nx, this.ny, this.nz);
+            this.engine.initGPU(
+                device,
+                this.gpuReadBuffer,
+                this.gpuWriteBuffer,
+                this.stride,
+                this.nx, this.ny, this.nz
+            );
         }
     }
 
+    // ── GPU REFACTO V5.4 ──
+    swapGPUBuffers() {
+        if (this.gpuReadBuffer && this.gpuWriteBuffer) {
+            [this.gpuReadBuffer, this.gpuWriteBuffer] = [this.gpuWriteBuffer, this.gpuReadBuffer];
+            this.gpuParity = 1 - this.gpuParity;
+        }
+    }
+
+    /** Méthode CPU – inchangée */
     async compute() {
         if (!this.engine) return;
         await (this.engine.compute as any)(this.faces, this.nx, this.ny, this.nz, this.x, this.y, this.z);
     }
 
-    /** Helper pour vider une face spécifique */
     clearFace(faceIndex: number) {
         this.faces[faceIndex].fill(0);
     }
 
-    /**
-     * Rapatrie les données de la VRAM vers la RAM (Zero-Copy Host Buffer).
-     * @param faceIndices Liste optionnelle des faces à synchroniser.
-     * @param block Si vrai, attend la fin du transfert (comportement par défaut).
-     */
-    async syncToHost(faceIndices?: number[], block: boolean = true) {
-        if (!this.gpuBuffer) return;
+    // ── GPU REFACTO V5.4 ── Lecture asynchrone non-bloquante
+    async syncToHost(faceIndices?: number[], block: boolean = false): Promise<void> {
+        if (!this.gpuReadBuffer) return;
 
         const device = HypercubeGPUContext.device;
+        const totalSize = this.faces.length * this.stride;
 
-        // Si on a des promesses en cours d'une frame précédente, on les attend d'abord
-        if (this.pendingSyncPromises.length > 0) {
-            await Promise.all(this.pendingSyncPromises);
-            this.pendingSyncPromises = [];
+        if (!this.stagingBuffer) {
+            this.stagingBuffer = device.createBuffer({
+                size: totalSize,
+                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+                label: `Staging Buffer Chunk ${this.x},${this.y}`
+            });
         }
 
-        const commandEncoder = device.createCommandEncoder();
-        const activeStaging: { buffer: GPUBuffer, faceIdx: number, size: number }[] = [];
-
-        const facesToSync = faceIndices && faceIndices.length > 0 ? faceIndices : Array.from({ length: this.faces.length }, (_, i) => i);
-
-        for (const faceIdx of facesToSync) {
-            if (faceIdx < 0 || faceIdx >= this.faces.length) continue;
-
-            const faceSize = this.stride;
-            const key = `face_${faceIdx}`;
-            let stagingBuffer = this.stagingBuffers.get(key);
-
-            if (!stagingBuffer) {
-                stagingBuffer = device.createBuffer({
-                    size: faceSize,
-                    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-                });
-                this.stagingBuffers.set(key, stagingBuffer);
-            }
-
-            commandEncoder.copyBufferToBuffer(
-                this.gpuBuffer, faceIdx * this.stride,
-                stagingBuffer, 0,
-                faceSize
-            );
-            activeStaging.push({ buffer: stagingBuffer, faceIdx, size: faceSize });
-        }
-
-        device.queue.submit([commandEncoder.finish()]);
-
-        const syncProcess = async () => {
-            await Promise.all(activeStaging.map(as => as.buffer.mapAsync(GPUMapMode.READ)));
-
-            for (const as of activeStaging) {
-                const arrayBuffer = as.buffer.getMappedRange();
-                const dstOffset = this.offset + (as.faceIdx * this.stride);
-                new Uint8Array(this.masterBuffer.buffer, dstOffset, as.size).set(new Uint8Array(arrayBuffer));
-                as.buffer.unmap();
-            }
-        };
+        const encoder = device.createCommandEncoder();
+        encoder.copyBufferToBuffer(this.gpuReadBuffer, 0, this.stagingBuffer, 0, totalSize);
+        device.queue.submit([encoder.finish()]);
 
         if (block) {
-            await syncProcess();
+            await this.stagingBuffer.mapAsync(GPUMapMode.READ);
+            const mapped = this.stagingBuffer.getMappedRange();
+            new Uint8Array(this.masterBuffer.buffer, this.offset, totalSize)
+                .set(new Uint8Array(mapped));
+            this.stagingBuffer.unmap();
         } else {
-            this.pendingSyncPromises.push(syncProcess());
-        }
-    }
-
-    /**
-     * Envoie les données de la RAM (MasterBuffer) vers la VRAM (GPUBuffer).
-     * Indispensable pour l'interactivité ou l'initialisation complexe.
-     * @param faceIndices Liste optionnelle des faces à synchroniser (ex: [0, 1]). Si vide, synchronise tout.
-     */
-    syncFromHost(faceIndices?: number[]) {
-        if (!this.gpuBuffer) return;
-
-        const device = HypercubeGPUContext.device;
-
-        if (!faceIndices || faceIndices.length === 0) {
-            const totalSize = this.faces.length * this.stride;
-            device.queue.writeBuffer(
-                this.gpuBuffer,
-                0,
-                this.masterBuffer.buffer,
-                this.offset,
-                totalSize
-            );
-        } else {
-            for (const faceIdx of faceIndices) {
-                if (faceIdx < 0 || faceIdx >= this.faces.length) continue;
-
-                device.queue.writeBuffer(
-                    this.gpuBuffer,
-                    faceIdx * this.stride,
-                    this.masterBuffer.buffer,
-                    this.offset + (faceIdx * this.stride),
-                    this.stride
-                );
+            // ── GPU REFACTO V5.4 ── Mapping asynchrone (Non-Bloquant)
+            // On ne tente le mapping que si le buffer est libre (évite les erreurs d'overlap)
+            if (this.stagingBuffer.mapState === 'unmapped') {
+                this.stagingBuffer.mapAsync(GPUMapMode.READ).then(() => {
+                    if (this.stagingBuffer && this.stagingBuffer.mapState === 'mapped') {
+                        const mapped = this.stagingBuffer.getMappedRange();
+                        new Uint8Array(this.masterBuffer.buffer, this.offset, totalSize)
+                            .set(new Uint8Array(mapped));
+                        this.stagingBuffer.unmap();
+                    }
+                }).catch(() => { /* On ignore les échecs de lecture différée */ });
             }
         }
     }
+
+    // ── GPU REFACTO V5.4 ──
+    syncFromHost(faceIndices?: number[]) {
+        if (!this.gpuReadBuffer) return;
+        const device = HypercubeGPUContext.device;
+        const totalSize = this.faces.length * this.stride;
+
+        if (!faceIndices || faceIndices.length === 0) {
+            device.queue.writeBuffer(this.gpuReadBuffer, 0, this.masterBuffer.buffer, this.offset, totalSize);
+            if (this.gpuWriteBuffer) {
+                device.queue.writeBuffer(this.gpuWriteBuffer, 0, this.masterBuffer.buffer, this.offset, totalSize);
+            }
+        } else {
+            for (const idx of faceIndices) {
+                const offset = idx * this.stride;
+                device.queue.writeBuffer(this.gpuReadBuffer, offset, this.masterBuffer.buffer, this.offset + offset, this.stride);
+                if (this.gpuWriteBuffer) {
+                    device.queue.writeBuffer(this.gpuWriteBuffer, offset, this.masterBuffer.buffer, this.offset + offset, this.stride);
+                }
+            }
+        }
+    }
+
+    // ── GPU REFACTO V5.4 ── Nettoyage propre
+    destroy() {
+        this.gpuReadBuffer?.destroy();
+        this.gpuWriteBuffer?.destroy();
+        this.stagingBuffer?.destroy();
+
+        this.gpuReadBuffer = null;
+        this.gpuWriteBuffer = null;
+        this.stagingBuffer = null;
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

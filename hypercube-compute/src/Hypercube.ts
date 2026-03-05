@@ -5,6 +5,8 @@ import { CanvasAdapter } from './io/CanvasAdapter';
 import { WebGpuRenderer } from './io/WebGpuRenderer';
 import { HypercubeIsoRenderer } from './utils/HypercubeIsoRenderer';
 import { HypercubeGPUContext } from './core/gpu/HypercubeGPUContext';
+import { HypercubeChunk } from './core/HypercubeChunk';
+import type { IHypercubeEngine } from './engines/IHypercubeEngine';
 
 export interface HypercubeConfig {
     engine: string;
@@ -23,6 +25,30 @@ export interface HypercubeConfig {
  * The easiest way to start a simulation.
  */
 export class Hypercube {
+    private masterBuffer: HypercubeMasterBuffer;
+
+    constructor(initialMemoryMB: number = 100) {
+        this.masterBuffer = new HypercubeMasterBuffer(initialMemoryMB * 1024 * 1024);
+    }
+
+    /**
+     * Legacy helper for tests. Creates a single chunk grid.
+     */
+    public createCube(
+        id: string,
+        res: { nx: number, ny: number, nz?: number },
+        engine: IHypercubeEngine,
+        numFaces: number = 6
+    ): HypercubeChunk {
+        const nx = res.nx;
+        const ny = res.ny;
+        const nz = res.nz ?? 1;
+        const chunk = new HypercubeChunk(0, 0, nx, ny, nz, this.masterBuffer, numFaces);
+        chunk.setEngine(engine);
+        engine.init(chunk.faces, nx, ny, nz, false);
+        return chunk;
+    }
+
     /**
      * Creates and initializes a complete simulation grid.
      */

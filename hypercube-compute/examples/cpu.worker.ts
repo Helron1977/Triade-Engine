@@ -85,7 +85,7 @@ self.onmessage = (e: MessageEvent) => {
             // 3. Reconstruire le Cube (Zéro-Copie des données)
             cube = new HypercubeChunk(chunkX || 0, chunkY || 0, nx, ny, nz || 1, dummyBuffer as unknown as any, numFaces || 6);
             cube.setEngine(engine);
-            engine.init(cube.faces, cube.nx, cube.ny, cube.nz, true); // isWorker = true
+            // engine.init(cube.faces, cube.nx, cube.ny, cube.nz, true); // <--- DO NOT RE-INIT! Overwrites main thread splashes.
 
             chunkCache.set(cubeOffset, cube);
         } else {

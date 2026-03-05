@@ -123,9 +123,7 @@ export class VolumeDiffusionEngine implements IHypercubeEngine {
     private wgSizeZ: number = 4;
     private wgSizeCopy: number = 256;
 
-    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
-        this.cubeBuffer = cubeBuffer;
-
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         // Dynamically scale workgroup sizes to match hardware limits (default 256, often 512 or 1024)
         const maxInvoc = device.limits.maxComputeInvocationsPerWorkgroup || 256;
         if (maxInvoc >= 1024) {
@@ -172,7 +170,7 @@ export class VolumeDiffusionEngine implements IHypercubeEngine {
         });
 
         // stride est en bytes -> strideFace en floats
-        const strideFace = (nx * ny * nz); // offset exact local au chunk float pour Face 0 -> Face 1! 
+        const strideFace = (nx * ny * nz);
 
         const uniformData = new ArrayBuffer(32);
         const u32 = new Uint32Array(uniformData);
@@ -187,48 +185,44 @@ export class VolumeDiffusionEngine implements IHypercubeEngine {
         u32[6] = this.boundaryMode === 'periodic' ? 1 : 0;
         u32[7] = 0; // Padding
 
-        this.uniformBuffer = HypercubeGPUContext.createUniformBuffer(uniformData);
-
-        if (!this.pipelineDiffusion || !this.uniformBuffer) return;
-
-        this.bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [
-                { binding: 0, resource: { buffer: cubeBuffer } },
-                { binding: 1, resource: { buffer: this.uniformBuffer } }
-            ]
+        this.uniformBuffer = device.createBuffer({
+            size: uniformData.byteLength,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
+        device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
         this.gpuEnabled = true;
     }
 
-    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup || !this.pipelineDiffusion || !this.pipelineCopy || !this.uniformBuffer || !this.cubeBuffer) return;
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
+        if (!this.pipelineDiffusion || !this.pipelineCopy || !this.uniformBuffer) return;
 
-        // Optionally update uniforms if diffusionRate or dissipation changed dynamically
         const uniformData = new ArrayBuffer(32);
         const u32 = new Uint32Array(uniformData);
         const f32 = new Float32Array(uniformData);
 
         const strideFace = (nx * ny * nz);
 
-        u32[0] = nx;
-        u32[1] = ny;
-        u32[2] = nz;
-        f32[3] = this.diffusionRate;
-        f32[4] = this.dissipation;
-        u32[5] = strideFace;
-        u32[6] = this.boundaryMode === 'periodic' ? 1 : 0;
+        u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = strideFace;
+        f32[3] = this.diffusionRate; f32[4] = this.dissipation;
+        u32[5] = strideFace; u32[6] = this.boundaryMode === 'periodic' ? 1 : 0;
         u32[7] = 0;
 
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
+        const bindGroup = device.createBindGroup({
+            layout: this.pipelineDiffusion.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: readBuffer } },
+                { binding: 1, resource: { buffer: this.uniformBuffer } }
+            ]
+        });
+
         // Dispatch diffusion compute shader
         const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setBindGroup(0, this.bindGroup);
+        passEncoder.setBindGroup(0, bindGroup);
         passEncoder.setPipeline(this.pipelineDiffusion);
 
-        // Dispatch scaling to 3D dimensions dynamically matching the device's compiled limits
         passEncoder.dispatchWorkgroups(
             Math.ceil(nx / this.wgSizeX),
             Math.ceil(ny / this.wgSizeY),

@@ -48,15 +48,10 @@ export class GameOfLifeEngine implements IHypercubeEngine {
 
     private pipelineGoL: GPUComputePipeline | null = null;
     private pipelineCopy: GPUComputePipeline | null = null;
-    private bindGroup: GPUBindGroup | null = null;
     private uniformBuffer: GPUBuffer | null = null;
-    private cubeBuffer: GPUBuffer | null = null;
     public gpuEnabled: boolean = false;
     private frameCounter: number = 0;
-
-    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
-        this.cubeBuffer = cubeBuffer;
-
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         const wgSizeX = 16;
         const wgSizeY = 16;
 
@@ -97,27 +92,17 @@ export class GameOfLifeEngine implements IHypercubeEngine {
         f32[8] = this.config.carniStarveThreshold;
         u32[9] = 0; // frameCounter
 
-        // Utilisation via le GPUContext importer dynamiquement n'est pas possible directement ici si on l'a pas en dépendance,
-        // mais le framework injecte le device directement. On va créer le buffer nativement:
         this.uniformBuffer = device.createBuffer({
             size: uniformData.byteLength,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-        this.bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [
-                { binding: 0, resource: { buffer: cubeBuffer } },
-                { binding: 1, resource: { buffer: this.uniformBuffer } }
-            ]
-        });
-
         this.gpuEnabled = true;
     }
 
-    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup || !this.pipelineGoL || !this.pipelineCopy || !this.uniformBuffer) return;
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
+        if (!this.pipelineGoL || !this.pipelineCopy || !this.uniformBuffer) return;
 
         this.frameCounter++;
 
@@ -133,8 +118,16 @@ export class GameOfLifeEngine implements IHypercubeEngine {
 
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
+        const bindGroup = device.createBindGroup({
+            layout: this.pipelineGoL.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: readBuffer } },
+                { binding: 1, resource: { buffer: this.uniformBuffer } }
+            ]
+        });
+
         const passEncoder = commandEncoder.beginComputePass();
-        passEncoder.setBindGroup(0, this.bindGroup);
+        passEncoder.setBindGroup(0, bindGroup);
 
         passEncoder.setPipeline(this.pipelineGoL);
         passEncoder.dispatchWorkgroups(Math.ceil(nx / 16), Math.ceil(ny / 16), nz || 1);

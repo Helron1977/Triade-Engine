@@ -16,8 +16,9 @@ export class AerodynamicsEngine implements IHypercubeEngine {
     // WebGPU Attributes
     private pipelineLBM: GPUComputePipeline | null = null;
     private pipelineVorticity: GPUComputePipeline | null = null;
-    private bindGroup: GPUBindGroup | null = null;
     private uniformBuffer: GPUBuffer | null = null;
+    private parity: number = 0;
+    public gpuEnabled: boolean = false;
 
     public get name(): string {
         return "Aerodynamics LBM D2Q9";
@@ -68,7 +69,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         }
     }
 
-    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         const shaderModule = device.createShaderModule({ code: this.wgslSource });
 
         const bindGroupLayout = device.createBindGroupLayout({
@@ -101,12 +102,12 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         });
 
         this.uniformBuffer = device.createBuffer({
-            size: 32,
+            size: 64, // Increased to match common alignment
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
         const strideFloats = stride / 4;
-        const uniformData = new ArrayBuffer(32);
+        const uniformData = new ArrayBuffer(64);
         const u32 = new Uint32Array(uniformData);
         const f32 = new Float32Array(uniformData);
 
@@ -117,34 +118,36 @@ export class AerodynamicsEngine implements IHypercubeEngine {
 
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-        this.bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
+        this.gpuEnabled = true;
+    }
+
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
+        if (!this.pipelineLBM || !this.pipelineVorticity || !this.uniformBuffer) return;
+
+        // Current AerodynamicsEngine implementation expects a single buffer.
+        // We'll use readBuffer as the target to satisfy the interface for now.
+        const bindGroup = device.createBindGroup({
+            layout: this.pipelineLBM.getBindGroupLayout(0),
             entries: [
-                { binding: 0, resource: { buffer: cubeBuffer } },
+                { binding: 0, resource: { buffer: readBuffer } },
                 { binding: 1, resource: { buffer: this.uniformBuffer } }
             ]
         });
-    }
-
-
-
-    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup || !this.pipelineLBM || !this.pipelineVorticity) return;
 
         const wgSize = 16;
         const wgX = Math.ceil(nx / wgSize);
         const wgY = Math.ceil(ny / wgSize);
 
         const pass1 = commandEncoder.beginComputePass();
-        pass1.setBindGroup(0, this.bindGroup);
+        pass1.setBindGroup(0, bindGroup);
         pass1.setPipeline(this.pipelineLBM);
-        pass1.dispatchWorkgroups(wgX, wgY, nz);
+        pass1.dispatchWorkgroups(wgX, wgY, nz || 1);
         pass1.end();
 
         const pass2 = commandEncoder.beginComputePass();
-        pass2.setBindGroup(0, this.bindGroup);
+        pass2.setBindGroup(0, bindGroup);
         pass2.setPipeline(this.pipelineVorticity);
-        pass2.dispatchWorkgroups(wgX, wgY, nz);
+        pass2.dispatchWorkgroups(wgX, wgY, nz || 1);
         pass2.end();
     }
 

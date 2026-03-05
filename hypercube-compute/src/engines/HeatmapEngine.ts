@@ -51,7 +51,7 @@ export class HeatmapEngine implements IHypercubeEngine {
     /**
      * Initialisation spécifique au GPU. Compile les shaders et prépare le layout.
      */
-    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         const shaderModule = device.createShaderModule({ code: this.wgslSource });
 
         const bindGroupLayout = device.createBindGroupLayout({
@@ -88,7 +88,6 @@ export class HeatmapEngine implements IHypercubeEngine {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
-        // Alignement strict WebGPU 16 bytes: vec3<u32> (nx, ny, nz), i32 (radius), f32 (weight), u32 (stride)
         const strideFloats = stride / 4;
         const uniformData = new ArrayBuffer(32);
         const u32 = new Uint32Array(uniformData);
@@ -104,51 +103,44 @@ export class HeatmapEngine implements IHypercubeEngine {
 
         device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
-        this.bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
+        // We will store the uniform buffer but create bind groups at dispatch time for safety
+        (this as any).gpuUniformBuffer = uniformBuffer;
+    }
+
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
+        const uniformBuffer = (this as any).gpuUniformBuffer;
+        if (!uniformBuffer) return;
+
+        const bindGroup = device.createBindGroup({
+            layout: this.pipelineHorizontal!.getBindGroupLayout(0),
             entries: [
-                { binding: 0, resource: { buffer: cubeBuffer } },
+                { binding: 0, resource: { buffer: readBuffer } },
                 { binding: 1, resource: { buffer: uniformBuffer } }
             ]
         });
-    }
-
-    /**
-     * Dispatch GPU des différents Compute Shaders via des passes distinctes.
-     */
-    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
-        if (!this.bindGroup) return;
-
-        let passEncoder;
 
         // --- PASS 1: Prefix Sum Horizontal ---
         if (this.pipelineHorizontal) {
-            passEncoder = commandEncoder.beginComputePass();
-            passEncoder.setBindGroup(0, this.bindGroup);
+            const passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setBindGroup(0, bindGroup);
             passEncoder.setPipeline(this.pipelineHorizontal);
-            // Dispatch : 1 workgroup (size 256) gère 1 ligne. On dispatch ny lignes x nz couches.
             passEncoder.dispatchWorkgroups(1, ny, nz);
             passEncoder.end();
-            device.queue.submit([commandEncoder.finish()]);
-            commandEncoder = device.createCommandEncoder();
         }
 
         // --- PASS 2: Prefix Sum Vertical ---
         if (this.pipelineVertical) {
-            passEncoder = commandEncoder.beginComputePass();
-            passEncoder.setBindGroup(0, this.bindGroup);
+            const passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setBindGroup(0, bindGroup);
             passEncoder.setPipeline(this.pipelineVertical);
-            // Dispatch : 1 workgroup (size 256) gère 1 colonne. On dispatch nx cols x nz couches.
             passEncoder.dispatchWorkgroups(nx, 1, nz);
             passEncoder.end();
-            device.queue.submit([commandEncoder.finish()]);
-            commandEncoder = device.createCommandEncoder();
         }
 
-        // --- PASS 3: Extraction Box Filter (Diffusion 2D par couche) ---
+        // --- PASS 3: Extraction Box Filter ---
         if (this.pipelineDiffusion) {
-            passEncoder = commandEncoder.beginComputePass();
-            passEncoder.setBindGroup(0, this.bindGroup);
+            const passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setBindGroup(0, bindGroup);
             passEncoder.setPipeline(this.pipelineDiffusion);
             passEncoder.dispatchWorkgroups(Math.ceil(nx / 16), Math.ceil(ny / 16), nz);
             passEncoder.end();

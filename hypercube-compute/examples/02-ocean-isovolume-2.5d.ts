@@ -69,7 +69,8 @@ async function bootstrap() {
     );
 
     if (mode === 'gpu') {
-        grid.cubes.flat().forEach(c => c?.syncFromHost());
+        // Crucial: sync BOTH ping-pong buffers initially so the simulation starts with momentum
+        grid.cubes.flat().forEach(c => c?.syncFromHost(undefined));
     }
 
     // Prepare Advanced IsoRenderer
@@ -91,23 +92,24 @@ async function bootstrap() {
             const x = ((e.clientX - rect.left) / rect.width) * worldW;
             const y = ((e.clientY - rect.top) / rect.height) * worldH;
             grid.applyEquilibrium(x, y, 0, 10, 1.4, 0, 0);
-            if (mode === 'gpu') grid.cubes.flat().forEach(c => c?.syncFromHost());
+            if (mode === 'gpu') {
+                grid.cubes.flat().forEach(c => c?.syncFromHost());
+            }
         }
     });
+
+    let frameCount = 0;
     async function tick() {
         const start = performance.now();
         await grid.compute();
 
-        if ((grid as any).mode === 'gpu') {
-            for (let y = 0; y < grid.rows; y++) {
-                for (let x = 0; x < grid.cols; x++) {
-                    const chunk = grid.cubes[y][x];
-                    // On ne synchronise que la densité (22) et les obstacles (18) pour le rendu.
-                    // On utilise le mode non-bloquant (async) pour éviter les stalls PCIe.
-                    if (chunk) chunk.syncToHost([22, 18], false);
-                }
-            }
+        // GPU Visualization Sync (Every 2 frames, non-blocking)
+        if (mode === 'gpu' && frameCount % 2 === 0) {
+            const flatCubes = grid.cubes.flat().filter(c => c !== null);
+            // Synchronize the density face (22) for the renderer
+            Promise.all(flatCubes.map(c => c!.syncToHost([22], false)));
         }
+        frameCount++;
 
         isoRenderer.clearAndSetup(5, 15, 45); // Deep sea dark blue
         isoRenderer.renderMultiChunkVolume(
