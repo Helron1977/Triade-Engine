@@ -73,6 +73,97 @@ export class OceanEngine implements IHypercubeEngine {
         };
     }
 
+    private pipelineLBM: GPUComputePipeline | null = null;
+    private pipelineBio: GPUComputePipeline | null = null;
+    private pipelineCopy: GPUComputePipeline | null = null;
+    private bindGroup: GPUBindGroup | null = null;
+    private uniformBuffer: GPUBuffer | null = null;
+    private lastStride: number = 0;
+    public gpuEnabled: boolean = false;
+
+    public initGPU(device: GPUDevice, cubeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+        this.lastStride = stride / 4; // convert byte stride to float index stride
+        const shaderModule = device.createShaderModule({ code: this.getWgslSource() });
+
+        const bindGroupLayout = device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+            ]
+        });
+        const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
+
+        this.pipelineLBM = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: { module: shaderModule, entryPoint: 'compute_lbm' }
+        });
+
+        this.pipelineBio = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: { module: shaderModule, entryPoint: 'compute_bio' }
+        });
+
+        this.pipelineCopy = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: { module: shaderModule, entryPoint: 'copy_faces' }
+        });
+
+        const uniformSize = 16 * 4; // 16 floats/uints
+        const uniformData = new ArrayBuffer(uniformSize);
+        const u32 = new Uint32Array(uniformData);
+        const f32 = new Float32Array(uniformData);
+
+        u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride; // strideFace
+        f32[4] = this.params.tau_0; f32[5] = this.params.smagorinsky;
+        f32[6] = this.params.cflLimit; f32[7] = this.params.closedBounds ? 1.0 : 0.0;
+        f32[8] = this.params.bioDiffusion; f32[9] = this.params.bioGrowth;
+
+        this.uniformBuffer = device.createBuffer({
+            size: uniformData.byteLength,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+
+        this.bindGroup = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: cubeBuffer } },
+                { binding: 1, resource: { buffer: this.uniformBuffer } }
+            ]
+        });
+
+        this.gpuEnabled = true;
+    }
+
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number): void {
+        if (!this.bindGroup || !this.pipelineLBM || !this.pipelineBio || !this.pipelineCopy || !this.uniformBuffer) return;
+
+        const uniformSize = 16 * 4;
+        const uniformData = new ArrayBuffer(uniformSize);
+        const u32 = new Uint32Array(uniformData);
+        const f32 = new Float32Array(uniformData);
+
+        u32[0] = nx; u32[1] = ny; u32[2] = nz; u32[3] = this.lastStride;
+        f32[4] = this.params.tau_0; f32[5] = this.params.smagorinsky;
+        f32[6] = this.params.cflLimit; f32[7] = this.params.closedBounds ? 1.0 : 0.0;
+        f32[8] = this.params.bioDiffusion; f32[9] = this.params.bioGrowth;
+        device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+
+        const passEncoder = commandEncoder.beginComputePass();
+        passEncoder.setBindGroup(0, this.bindGroup);
+
+        passEncoder.setPipeline(this.pipelineLBM);
+        passEncoder.dispatchWorkgroups(Math.ceil(nx / 16), Math.ceil(ny / 16), nz || 1);
+
+        passEncoder.setPipeline(this.pipelineBio);
+        passEncoder.dispatchWorkgroups(Math.ceil(nx / 16), Math.ceil(ny / 16), nz || 1);
+
+        passEncoder.setPipeline(this.pipelineCopy);
+        passEncoder.dispatchWorkgroups(Math.ceil((nx * ny * nz) / 256));
+
+        passEncoder.end();
+    }
+
     public getEquilibrium(rho: number, ux: number, uy: number): Float32Array {
         const res = new Float32Array(9);
         const u2 = ux * ux + uy * uy;
@@ -314,8 +405,8 @@ export class OceanEngine implements IHypercubeEngine {
                 let next = bio[i] + this.params.bioDiffusion * lap + this.params.bioGrowth * bio[i] * (1 - bio[i]);
 
                 // Advection
-                const ux = faces[18][i];
-                const uy = faces[19][i];
+                const ux = faces[19][i];
+                const uy = faces[20][i];
                 const ax = Math.max(1, Math.min(nx - 2, x - ux * 0.8));
                 const ay = Math.max(1, Math.min(ny - 2, y - uy * 0.8));
                 const ix = Math.floor(ax);
@@ -338,6 +429,239 @@ export class OceanEngine implements IHypercubeEngine {
         }
 
         for (let i = 0; i < nx * ny; i++) bio[zOff + i] = bio_next[zOff + i];
+    }
+
+    private getWgslSource(): string {
+        return `
+            struct Uniforms {
+                nx: u32, ny: u32, nz: u32, strideFace: u32,
+                tau_0: f32, smagorinsky: f32, cflLimit: f32, isClosed: f32,
+                bioDiffusion: f32, bioGrowth: f32, pad1: f32, pad2: f32, pad3: f32, pad4: f32, pad5: f32, pad6: f32
+            };
+
+            @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
+            @group(0) @binding(1) var<uniform> config: Uniforms;
+
+            const w0 = 0.444444444; const w1 = 0.111111111; const w2 = 0.027777777;
+
+            @compute @workgroup_size(16, 16, 1)
+            fn compute_lbm(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let x = global_id.x;
+                let y = global_id.y;
+                let z = global_id.z;
+
+                if (x >= config.nx || y >= config.ny || z >= config.nz) { return; }
+                
+                let idx = z * config.nx * config.ny + y * config.nx + x;
+                let stride = config.strideFace;
+                let f_out_base = 9u * stride;
+
+                if (x == 0u || x == config.nx - 1u || y == 0u || y == config.ny - 1u) { 
+                    for (var k = 0u; k < 9u; k = k + 1u) {
+                        cube[f_out_base + k * stride + idx] = cube[k * stride + idx];
+                    }
+                    return; 
+                }
+
+                let isClosed = config.isClosed > 0.5;
+
+                // Output Buffers (f_post) => 9..17
+                
+
+                let obst = cube[18u * stride + idx];
+                if (obst > 0.5) {
+                    cube[f_out_base + 0u * stride + idx] = w0;
+                    cube[f_out_base + 1u * stride + idx] = w1; cube[f_out_base + 2u * stride + idx] = w1;
+                    cube[f_out_base + 3u * stride + idx] = w1; cube[f_out_base + 4u * stride + idx] = w1;
+                    cube[f_out_base + 5u * stride + idx] = w2; cube[f_out_base + 6u * stride + idx] = w2;
+                    cube[f_out_base + 7u * stride + idx] = w2; cube[f_out_base + 8u * stride + idx] = w2;
+                    return;
+                }
+
+                // Internal Pull Streaming
+                var pf0 = cube[0u * stride + idx];
+                
+                var pf1: f32; var pf2: f32; var pf3: f32; var pf4: f32;
+                var pf5: f32; var pf6: f32; var pf7: f32; var pf8: f32;
+
+                // 1(+x), opp:3
+                let i1 = idx - 1u;
+                pf1 = select(cube[1u * stride + i1], cube[3u * stride + idx], (isClosed && (x <= 1u)) || cube[18u * stride + i1] > 0.5);
+                // 2(+y), opp:4
+                let i2 = idx - config.nx;
+                pf2 = select(cube[2u * stride + i2], cube[4u * stride + idx], (isClosed && (y <= 1u)) || cube[18u * stride + i2] > 0.5);
+                // 3(-x), opp:1
+                let i3 = idx + 1u;
+                pf3 = select(cube[3u * stride + i3], cube[1u * stride + idx], (isClosed && (x >= config.nx - 2u)) || cube[18u * stride + i3] > 0.5);
+                // 4(-y), opp:2
+                let i4 = idx + config.nx;
+                pf4 = select(cube[4u * stride + i4], cube[2u * stride + idx], (isClosed && (y >= config.ny - 2u)) || cube[18u * stride + i4] > 0.5);
+                // 5(+x+y), opp:7
+                let i5 = idx - config.nx - 1u;
+                pf5 = select(cube[5u * stride + i5], cube[7u * stride + idx], (isClosed && (x <= 1u || y <= 1u)) || cube[18u * stride + i5] > 0.5);
+                // 6(-x+y), opp:8
+                let i6 = idx - config.nx + 1u;
+                pf6 = select(cube[6u * stride + i6], cube[8u * stride + idx], (isClosed && (x >= config.nx - 2u || y <= 1u)) || cube[18u * stride + i6] > 0.5);
+                // 7(-x-y), opp:5
+                let i7 = idx + config.nx + 1u;
+                pf7 = select(cube[7u * stride + i7], cube[5u * stride + idx], (isClosed && (x >= config.nx - 2u || y >= config.ny - 2u)) || cube[18u * stride + i7] > 0.5);
+                // 8(+x-y), opp:6
+                let i8 = idx + config.nx - 1u;
+                pf8 = select(cube[8u * stride + i8], cube[6u * stride + idx], (isClosed && (x <= 1u || y >= config.ny - 2u)) || cube[18u * stride + i8] > 0.5);
+
+                var r = pf0 + pf1 + pf2 + pf3 + pf4 + pf5 + pf6 + pf7 + pf8;
+                var vx = (pf1 + pf5 + pf8) - (pf3 + pf6 + pf7);
+                var vy = (pf2 + pf5 + pf6) - (pf4 + pf7 + pf8);
+
+                var isShockwave = false;
+                if (r < 0.8 || r > 1.2 || r < 0.0001) {
+                    var targetRho = clamp(r, 0.8, 1.2);
+                    if (r < 0.0001) { targetRho = 1.0; }
+                    let scale = targetRho / (r + 0.00001);
+                    pf0 *= scale; pf1 *= scale; pf2 *= scale; pf3 *= scale; pf4 *= scale;
+                    pf5 *= scale; pf6 *= scale; pf7 *= scale; pf8 *= scale;
+                    r = targetRho;
+                    isShockwave = true;
+                }
+
+                vx /= r; vy /= r;
+
+                let v2 = vx * vx + vy * vy;
+                let speed = sqrt(v2);
+                var u2_clamped = v2;
+
+                if (speed > config.cflLimit) {
+                    let scale = config.cflLimit / speed;
+                    vx *= scale; vy *= scale;
+                    u2_clamped = vx * vx + vy * vy;
+                    isShockwave = true;
+                }
+
+                cube[22u * stride + idx] = r;
+                cube[19u * stride + idx] = vx;
+                cube[20u * stride + idx] = vy;
+
+                let u2_15 = 1.5 * u2_clamped;
+
+                let feq0 = w0 * r * (1.0 - u2_15);
+                let feq1 = w1 * r * (1.0 + 3.0 * vx + 4.5 * vx * vx - u2_15);
+                let feq2 = w1 * r * (1.0 + 3.0 * vy + 4.5 * vy * vy - u2_15);
+                let feq3 = w1 * r * (1.0 - 3.0 * vx + 4.5 * vx * vx - u2_15);
+                let feq4 = w1 * r * (1.0 - 3.0 * vy + 4.5 * vy * vy - u2_15);
+
+                let cu5 = vx + vy; let feq5 = w2 * r * (1.0 + 3.0 * cu5 + 4.5 * cu5 * cu5 - u2_15);
+                let cu6 = -vx + vy; let feq6 = w2 * r * (1.0 + 3.0 * cu6 + 4.5 * cu6 * cu6 - u2_15);
+                let cu7 = -vx - vy; let feq7 = w2 * r * (1.0 + 3.0 * cu7 + 4.5 * cu7 * cu7 - u2_15);
+                let cu8 = vx - vy; let feq8 = w2 * r * (1.0 + 3.0 * cu8 + 4.5 * cu8 * cu8 - u2_15);
+
+                if (isShockwave) {
+                    cube[f_out_base + 0u * stride + idx] = feq0;
+                    cube[f_out_base + 1u * stride + idx] = feq1; cube[f_out_base + 2u * stride + idx] = feq2;
+                    cube[f_out_base + 3u * stride + idx] = feq3; cube[f_out_base + 4u * stride + idx] = feq4;
+                    cube[f_out_base + 5u * stride + idx] = feq5; cube[f_out_base + 6u * stride + idx] = feq6;
+                    cube[f_out_base + 7u * stride + idx] = feq7; cube[f_out_base + 8u * stride + idx] = feq8;
+                } else {
+                    let fneq1 = pf1 - feq1; let fneq2 = pf2 - feq2;
+                    let fneq3 = pf3 - feq3; let fneq4 = pf4 - feq4;
+                    let fneq5 = pf5 - feq5; let fneq6 = pf6 - feq6;
+                    let fneq7 = pf7 - feq7; let fneq8 = pf8 - feq8;
+
+                    let Pxx = fneq1 + fneq3 + fneq5 + fneq6 + fneq7 + fneq8;
+                    let Pyy = fneq2 + fneq4 + fneq5 + fneq6 + fneq7 + fneq8;
+                    let Pxy = fneq5 - fneq6 + fneq7 - fneq8;
+
+                    var S_norm = sqrt(2.0 * (Pxx * Pxx + Pyy * Pyy + 2.0 * Pxy * Pxy));
+                    if (S_norm > 10.0) { S_norm = 10.0; }
+
+                    var tau_eff = config.tau_0 + config.smagorinsky * S_norm;
+                    if (tau_eff < 0.505) { tau_eff = 0.505; }
+                    if (tau_eff > 2.0) { tau_eff = 2.0; }
+
+                    let inv_tau = 1.0 / tau_eff;
+                    cube[f_out_base + 0u * stride + idx] = pf0 - (pf0 - feq0) * inv_tau;
+                    cube[f_out_base + 1u * stride + idx] = pf1 - fneq1 * inv_tau;
+                    cube[f_out_base + 2u * stride + idx] = pf2 - fneq2 * inv_tau;
+                    cube[f_out_base + 3u * stride + idx] = pf3 - fneq3 * inv_tau;
+                    cube[f_out_base + 4u * stride + idx] = pf4 - fneq4 * inv_tau;
+                    cube[f_out_base + 5u * stride + idx] = pf5 - fneq5 * inv_tau;
+                    cube[f_out_base + 6u * stride + idx] = pf6 - fneq6 * inv_tau;
+                    cube[f_out_base + 7u * stride + idx] = pf7 - fneq7 * inv_tau;
+                    cube[f_out_base + 8u * stride + idx] = pf8 - fneq8 * inv_tau;
+                }
+
+                // Curl calculation (vorticity) for rendering (Face 21)
+                let xM = max(1u, x - 1u); let xP = min(config.nx - 2u, x + 1u);
+                let dxDist = select(2.0, 1.0, x == 1u || x == config.nx - 2u);
+                let yM_idx = max(1u, y - 1u); let yP_idx = min(config.ny - 2u, y + 1u);
+                let dyDist = select(2.0, 1.0, y == 1u || y == config.ny - 2u);
+
+                let dUy_dx = (cube[20u * stride + z * config.nx * config.ny + y * config.nx + xP] - 
+                             cube[20u * stride + z * config.nx * config.ny + y * config.nx + xM]) / dxDist;
+                
+                let dUx_dy = (cube[19u * stride + z * config.nx * config.ny + yP_idx * config.nx + x] - 
+                             cube[19u * stride + z * config.nx * config.ny + yM_idx * config.nx + x]) / dyDist;
+                
+                cube[21u * stride + idx] = dUy_dx - dUx_dy;
+            }
+
+            @compute @workgroup_size(16, 16, 1)
+            fn compute_bio(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let x = global_id.x; let y = global_id.y; let z = global_id.z;
+                if (x >= config.nx || y >= config.ny || z >= config.nz) { return; }
+                let idx = z * config.nx * config.ny + y * config.nx + x;
+                let stride = config.strideFace;
+
+                if (x == 0u || x == config.nx - 1u || y == 0u || y == config.ny - 1u) { 
+                    cube[24u * stride + idx] = cube[23u * stride + idx];
+                    return;
+                }
+
+                let b_idx = 23u * stride + idx;
+                let bo = cube[b_idx];
+                
+                // Laplacian
+                let lap = cube[23u * stride + idx - 1u] + cube[23u * stride + idx + 1u] + 
+                          cube[23u * stride + idx - config.nx] + cube[23u * stride + idx + config.nx] - 4.0 * bo;
+
+                // Advection semi-lagrangian
+                // Face 18 is static obstacle, 19 is ux, 20 is uy. In CPU code above, there is a bug using face 18 for UX. 
+                // We fix it properly in WGSL: ux is 19, uy is 20.
+                let ux = cube[19u * stride + idx];
+                let uy = cube[20u * stride + idx];
+                
+                let ax = clamp(f32(x) - ux * 0.8, 1.0, f32(config.nx - 2u));
+                let ay = clamp(f32(y) - uy * 0.8, 1.0, f32(config.ny - 2u));
+                let ix = u32(ax); let iy = u32(ay);
+                let fx = ax - f32(ix); let fy = ay - f32(iy);
+
+                let v00 = cube[23u * stride + z * config.nx * config.ny + iy * config.nx + ix];
+                let v10 = cube[23u * stride + z * config.nx * config.ny + iy * config.nx + min(ix + 1u, config.nx - 2u)];
+                let v01 = cube[23u * stride + z * config.nx * config.ny + min(iy + 1u, config.ny - 2u) * config.nx + ix];
+                let v11 = cube[23u * stride + z * config.nx * config.ny + min(iy + 1u, config.ny - 2u) * config.nx + min(ix + 1u, config.nx - 2u)];
+
+                let advected = (1.0 - fy) * ((1.0 - fx) * v00 + fx * v10) + fy * ((1.0 - fx) * v01 + fx * v11);
+                
+                var next = advected + config.bioDiffusion * lap + config.bioGrowth * bo * (1.0 - bo);
+                next = clamp(next, 0.0, 1.0);
+                
+                cube[24u * stride + idx] = next; // bio_next
+            }
+
+            @compute @workgroup_size(256)
+            fn copy_faces(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let idx = global_id.x;
+                if (idx >= config.nx * config.ny * config.nz) { return; }
+                let stride = config.strideFace;
+
+                // Swap LBM f (0-8) with f_post (9-17)
+                for (var k = 0u; k < 9u; k = k + 1u) {
+                    cube[k * stride + idx] = cube[(k + 9u) * stride + idx];
+                }
+
+                // Swap Bio
+                cube[23u * stride + idx] = cube[24u * stride + idx];
+            }
+        `;
     }
 }
 

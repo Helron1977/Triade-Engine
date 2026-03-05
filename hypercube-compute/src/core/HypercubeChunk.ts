@@ -105,51 +105,101 @@ export class HypercubeChunk {
     /**
      * Rapatrie les données de la VRAM vers la RAM (Zero-Copy Host Buffer).
      * Nécessaire pour la visualisation ou la validation CPU des résultats GPU.
+     * @param faceIndices Liste optionnelle des faces à synchroniser (ex: [22, 18]). Si vide, synchronise tout.
      */
-    async syncToHost() {
+    async syncToHost(faceIndices?: number[]) {
         if (!this.gpuBuffer) return;
 
-        const totalSize = this.faces.length * this.stride;
         const device = HypercubeGPUContext.device;
 
-        // 1. Créer un buffer de lecture (Staging)
-        const stagingBuffer = device.createBuffer({
-            size: totalSize,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-        });
+        if (!faceIndices || faceIndices.length === 0) {
+            // Synchronisation complète (comportement original)
+            const totalSize = this.faces.length * this.stride;
+            const stagingBuffer = device.createBuffer({
+                size: totalSize,
+                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+            });
 
-        // 2. Copier de la VRAM vers le Staging
-        const commandEncoder = device.createCommandEncoder();
-        commandEncoder.copyBufferToBuffer(this.gpuBuffer, 0, stagingBuffer, 0, totalSize);
-        device.queue.submit([commandEncoder.finish()]);
+            const commandEncoder = device.createCommandEncoder();
+            commandEncoder.copyBufferToBuffer(this.gpuBuffer, 0, stagingBuffer, 0, totalSize);
+            device.queue.submit([commandEncoder.finish()]);
 
-        // 3. Mapper et copier vers le MasterBuffer (RAM)
-        await stagingBuffer.mapAsync(GPUMapMode.READ);
-        const arrayBuffer = stagingBuffer.getMappedRange();
+            await stagingBuffer.mapAsync(GPUMapMode.READ);
+            const arrayBuffer = stagingBuffer.getMappedRange();
+            new Uint8Array(this.masterBuffer.buffer, this.offset, totalSize).set(new Uint8Array(arrayBuffer));
 
-        // Copie directe dans l'ArrayBuffer partagé
-        new Uint8Array(this.masterBuffer.buffer, this.offset, totalSize).set(new Uint8Array(arrayBuffer));
+            stagingBuffer.unmap();
+            stagingBuffer.destroy();
+        } else {
+            // Synchronisation sélective par face
+            const commandEncoder = device.createCommandEncoder();
+            const stagingBuffers: { buffer: GPUBuffer, faceIdx: number, size: number }[] = [];
 
-        stagingBuffer.unmap();
-        stagingBuffer.destroy();
+            for (const faceIdx of faceIndices) {
+                if (faceIdx < 0 || faceIdx >= this.faces.length) continue;
+
+                const faceSize = this.stride; // On garde le stride pour l'alignement
+                const stagingBuffer = device.createBuffer({
+                    size: faceSize,
+                    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+                });
+
+                commandEncoder.copyBufferToBuffer(
+                    this.gpuBuffer, faceIdx * this.stride,
+                    stagingBuffer, 0,
+                    faceSize
+                );
+                stagingBuffers.push({ buffer: stagingBuffer, faceIdx, size: faceSize });
+            }
+
+            device.queue.submit([commandEncoder.finish()]);
+
+            // Mappage parallèle de toutes les faces demandées
+            await Promise.all(stagingBuffers.map(sb => sb.buffer.mapAsync(GPUMapMode.READ)));
+
+            for (const sb of stagingBuffers) {
+                const arrayBuffer = sb.buffer.getMappedRange();
+                const dstOffset = this.offset + (sb.faceIdx * this.stride);
+                new Uint8Array(this.masterBuffer.buffer, dstOffset, sb.size).set(new Uint8Array(arrayBuffer));
+
+                sb.buffer.unmap();
+                sb.buffer.destroy();
+            }
+        }
     }
 
     /**
      * Envoie les données de la RAM (MasterBuffer) vers la VRAM (GPUBuffer).
      * Indispensable pour l'interactivité ou l'initialisation complexe.
+     * @param faceIndices Liste optionnelle des faces à synchroniser (ex: [0, 1]). Si vide, synchronise tout.
      */
-    syncFromHost() {
+    syncFromHost(faceIndices?: number[]) {
         if (!this.gpuBuffer) return;
 
-        const totalSize = this.faces.length * this.stride;
+        const device = HypercubeGPUContext.device;
 
-        HypercubeGPUContext.device.queue.writeBuffer(
-            this.gpuBuffer,
-            0,
-            this.masterBuffer.buffer,
-            this.offset,
-            totalSize
-        );
+        if (!faceIndices || faceIndices.length === 0) {
+            const totalSize = this.faces.length * this.stride;
+            device.queue.writeBuffer(
+                this.gpuBuffer,
+                0,
+                this.masterBuffer.buffer,
+                this.offset,
+                totalSize
+            );
+        } else {
+            for (const faceIdx of faceIndices) {
+                if (faceIdx < 0 || faceIdx >= this.faces.length) continue;
+
+                device.queue.writeBuffer(
+                    this.gpuBuffer,
+                    faceIdx * this.stride,
+                    this.masterBuffer.buffer,
+                    this.offset + (faceIdx * this.stride),
+                    this.stride
+                );
+            }
+        }
     }
 }
 

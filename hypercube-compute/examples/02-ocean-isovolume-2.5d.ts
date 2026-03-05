@@ -2,6 +2,7 @@ import { HypercubeCpuGrid } from '../src/core/HypercubeCpuGrid';
 import { HypercubeMasterBuffer } from '../src/core/HypercubeMasterBuffer';
 import { OceanEngine } from '../src/engines/OceanEngine';
 import { HypercubeIsoRenderer } from '../src/utils/HypercubeIsoRenderer';
+import { HypercubeGPUContext } from '../src/core/gpu/HypercubeGPUContext';
 import { BenchmarkHUD } from './shared/BenchmarkHUD';
 
 const RESOLUTION = 128; // Faster for CPU Iso
@@ -9,6 +10,13 @@ const ROWS = 2;
 const COLS = 2;
 
 async function bootstrap() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode') === 'gpu' ? 'gpu' : 'cpu';
+
+    if (mode === 'gpu' && (navigator as any).gpu) {
+        await HypercubeGPUContext.init();
+    }
+
     // Add description overlay
     const desc = document.createElement('div');
     desc.className = 'showcase-description';
@@ -40,7 +48,8 @@ async function bootstrap() {
         numFaces,
         true, // Periodic boundaries globally
         true, // Multithreading on
-        new URL('./cpu.worker.ts', import.meta.url).href
+        new URL('./cpu.worker.ts', import.meta.url).href,
+        mode
     );
 
     // Initial Splash (GLOBAL CENTERED using V5 Helper)
@@ -59,6 +68,10 @@ async function bootstrap() {
         0.5   // uy
     );
 
+    if (mode === 'gpu') {
+        grid.cubes.flat().forEach(c => c?.syncFromHost());
+    }
+
     // Prepare Advanced IsoRenderer
     const canvas = document.createElement('canvas');
     canvas.width = window.innerWidth;
@@ -74,6 +87,16 @@ async function bootstrap() {
     async function tick() {
         const start = performance.now();
         await grid.compute();
+
+        if ((grid as any).mode === 'gpu') {
+            for (let y = 0; y < grid.rows; y++) {
+                for (let x = 0; x < grid.cols; x++) {
+                    const chunk = grid.cubes[y][x];
+                    // On ne synchronise que la densité (22) et les obstacles (18) pour le rendu
+                    if (chunk) await chunk.syncToHost([22, 18]);
+                }
+            }
+        }
 
         isoRenderer.clearAndSetup(5, 15, 45); // Deep sea dark blue
         isoRenderer.renderMultiChunkVolume(

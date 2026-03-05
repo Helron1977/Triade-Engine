@@ -19,6 +19,7 @@ export class HypercubeCpuGrid {
     public isPeriodic: boolean;
     public boundaryConfig: BoundaryConfig | null = null;
     public masterBuffer: HypercubeMasterBuffer;
+    public mode: 'cpu' | 'gpu';
 
     public stats = {
         computeTimeMs: 0,
@@ -37,10 +38,12 @@ export class HypercubeCpuGrid {
         engineFactory: () => IHypercubeEngine,
         numFaces: number = 6,
         isPeriodic: boolean = true,
-        useWorkers: boolean = true
+        useWorkers: boolean = true,
+        mode: 'cpu' | 'gpu' = 'cpu'
     ) {
         this.cols = cols;
         this.rows = rows;
+        this.mode = mode;
 
         if (typeof resolution === 'number') {
             this.nx = resolution;
@@ -87,11 +90,18 @@ export class HypercubeCpuGrid {
         numFaces: number = 6,
         isPeriodic: boolean = true,
         useWorkers: boolean = true,
-        workerScriptPath?: string
+        workerScriptPath?: string,
+        mode: 'cpu' | 'gpu' = 'cpu'
     ): Promise<HypercubeCpuGrid> {
-        const grid = new HypercubeCpuGrid(cols, rows, resolution, masterBuffer, engineFactory, numFaces, isPeriodic, useWorkers);
+        const grid = new HypercubeCpuGrid(cols, rows, resolution, masterBuffer, engineFactory, numFaces, isPeriodic, useWorkers, mode);
 
-        if (useWorkers && typeof SharedArrayBuffer !== 'undefined' && masterBuffer.buffer instanceof SharedArrayBuffer) {
+        if (mode === 'gpu') {
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    grid.cubes[y][x]?.initGPU();
+                }
+            }
+        } else if (useWorkers && typeof SharedArrayBuffer !== 'undefined' && masterBuffer.buffer instanceof SharedArrayBuffer) {
             grid.workerPool = new HypercubeWorkerPool();
             try {
                 await grid.workerPool.init(masterBuffer.buffer as SharedArrayBuffer, workerScriptPath);
@@ -126,7 +136,34 @@ export class HypercubeCpuGrid {
             }
         }
 
-        if (this.workerPool && this.masterBuffer.buffer instanceof SharedArrayBuffer) {
+        if (this.mode === 'gpu') {
+            const { HypercubeGPUContext } = await import('./gpu/HypercubeGPUContext');
+            const commandEncoder = HypercubeGPUContext.device.createCommandEncoder();
+
+            for (let y = 0; y < this.rows; y++) {
+                for (let x = 0; x < this.cols; x++) {
+                    const cube = this.cubes[y][x];
+                    if (cube && cube.engine && cube.engine.computeGPU) {
+                        cube.engine.computeGPU(HypercubeGPUContext.device, commandEncoder, cube.nx, cube.ny, cube.nz);
+                    }
+                }
+            }
+
+            HypercubeGPUContext.device.queue.submit([commandEncoder.finish()]);
+
+            const flatCubes = this.cubes.flat().filter(c => c !== null) as HypercubeChunk[];
+
+            // Selective sync back to CPU RAM for boundary synchronization
+            const engine = flatCubes[0]?.engine;
+            const syncFaces = (engine && engine.getSyncFaces) ? engine.getSyncFaces() : undefined;
+
+            if (facesToSynchronize === undefined) {
+                await Promise.all(flatCubes.map(c => c.syncToHost(syncFaces)));
+            } else {
+                await Promise.all(flatCubes.map(c => c.syncToHost(Array.isArray(facesToSynchronize) ? facesToSynchronize : [facesToSynchronize])));
+            }
+
+        } else if (this.workerPool && this.masterBuffer.buffer instanceof SharedArrayBuffer) {
             const flatCubes = this.cubes.flat().filter(c => c !== null) as HypercubeChunk[];
 
             const engineName = flatCubes[0]?.engine?.name || 'Unknown';
@@ -170,6 +207,11 @@ export class HypercubeCpuGrid {
 
         for (const f of faces) {
             this.synchronizeBoundaries(f);
+        }
+
+        if (this.mode === 'gpu') {
+            const flatCubes = this.cubes.flat().filter(c => c !== null) as HypercubeChunk[];
+            flatCubes.forEach(c => c.syncFromHost(faces));
         }
 
         const syncEnd = performance.now();
