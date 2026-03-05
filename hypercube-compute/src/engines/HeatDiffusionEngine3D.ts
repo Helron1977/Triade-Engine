@@ -17,7 +17,10 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
     }
 
     getConfig(): any {
-        return { alpha: this.alpha };
+        return {
+            alpha: this.alpha,
+            parity: this.parity
+        };
     }
 
     init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker?: boolean): void {
@@ -31,6 +34,7 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
 
     applyConfig(config: any): void {
         if (config.alpha !== undefined) this.alpha = config.alpha;
+        if (config.parity !== undefined) this.parity = config.parity;
     }
 
     private pipelineHD: GPUComputePipeline | null = null;

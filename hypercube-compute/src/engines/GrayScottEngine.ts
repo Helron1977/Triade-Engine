@@ -28,6 +28,24 @@ export class GrayScottEngine implements IHypercubeEngine {
         public kill: number = 0.06
     ) { }
 
+    public getConfig(): Record<string, any> {
+        return {
+            Da: this.Da,
+            Db: this.Db,
+            feed: this.feed,
+            kill: this.kill,
+            parity: this.parity
+        };
+    }
+
+    public applyConfig(config: any): void {
+        if (config.Da !== undefined) this.Da = config.Da;
+        if (config.Db !== undefined) this.Db = config.Db;
+        if (config.feed !== undefined) this.feed = config.feed;
+        if (config.kill !== undefined) this.kill = config.kill;
+        if (config.parity !== undefined) this.parity = config.parity;
+    }
+
     private pipelineGS: GPUComputePipeline | null = null;
     private bindGroup: GPUBindGroup | null = null;
     private uniformBuffer: GPUBuffer | null = null;

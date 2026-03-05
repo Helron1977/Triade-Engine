@@ -182,6 +182,13 @@ export class HypercubeCpuGrid {
             });
 
             await this.workerPool.computeAll(flatCubes, this.masterBuffer.buffer, { name: engineName, config: engineConfigs });
+
+            // Toggle parity on main thread engines to stay in sync with workers
+            for (const cube of flatCubes) {
+                if (cube.engine && (cube.engine as any).parity !== undefined) {
+                    (cube.engine as any).parity = 1 - (cube.engine as any).parity;
+                }
+            }
         } else {
             for (let y = 0; y < this.rows; y++) {
                 for (let x = 0; x < this.cols; x++) {
@@ -397,6 +404,9 @@ export class HypercubeCpuGrid {
                 }
             }
         }
+
+        // Sync boundaries after global paint
+        this.synchronizeBoundaries(face);
     }
 
     /**
@@ -435,6 +445,24 @@ export class HypercubeCpuGrid {
                         }
                     }
                 }
+            }
+        }
+
+        // Sync boundaries for ALL populations and macros
+        const engine = this.cubes[0][0]?.engine;
+        if (engine) {
+            const facesToSync = engine.getSyncFaces ? engine.getSyncFaces() : [0];
+            // Since we initialized BOTH ping-pong sets, we should sync BOTH if applicable,
+            // but for now, the active face is parity=0.
+            // Actually, for LBM, it's safer to sync 0-8 since it's the usual starting face.
+            for (const f of facesToSync) {
+                this.synchronizeBoundaries(f);
+            }
+            // Special: if it was parity 0, we also updated 9-17.
+            // Let's just sync whatever getSyncFaces says, and maybe add 0-8 explicitly if it's an Ocean splash.
+            if (engine.name === "OceanEngine") {
+                for (let k = 0; k < 18; k++) this.synchronizeBoundaries(k);
+                this.synchronizeBoundaries(22); // rho
             }
         }
     }

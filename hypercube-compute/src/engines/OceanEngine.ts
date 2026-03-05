@@ -77,8 +77,19 @@ export class OceanEngine implements IHypercubeEngine {
 
     public getConfig(): Record<string, any> {
         return {
-            ...this.params
+            ...this.params,
+            parity: this.parity
         };
+    }
+
+    public applyConfig(config: any): void {
+        if (config.tau_0 !== undefined) this.params.tau_0 = config.tau_0;
+        if (config.smagorinsky !== undefined) this.params.smagorinsky = config.smagorinsky;
+        if (config.cflLimit !== undefined) this.params.cflLimit = config.cflLimit;
+        if (config.bioDiffusion !== undefined) this.params.bioDiffusion = config.bioDiffusion;
+        if (config.bioGrowth !== undefined) this.params.bioGrowth = config.bioGrowth;
+        if (config.closedBounds !== undefined) this.params.closedBounds = config.closedBounds;
+        if (config.parity !== undefined) this.parity = config.parity;
     }
 
     private pipelineLBM: GPUComputePipeline | null = null;
@@ -215,6 +226,7 @@ export class OceanEngine implements IHypercubeEngine {
             this.stepLBM(faces, nx, ny, lz);
             this.stepBio(faces, nx, ny, lz);
         }
+        this.parity = 1 - this.parity;
     }
 
     private stepLBM(faces: Float32Array[], nx: number, ny: number, lz: number): void {

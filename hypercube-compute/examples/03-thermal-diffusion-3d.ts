@@ -72,8 +72,11 @@ async function bootstrap() {
         const start = performance.now();
         await grid.compute();
 
+        const syncFaces = grid.cubes[0][0]?.engine?.getSyncFaces?.();
+        const displayFace = (syncFaces && syncFaces.length > 0) ? syncFaces[0] : 0;
+
         Hypercube.autoRender(grid, canvas, {
-            faceIndex: 0,
+            faceIndex: displayFace,
             colormap: 'heatmap',
             minVal: 0,
             maxVal: 80, // Slightly tighter max to see internal colors better
