@@ -34,15 +34,14 @@ async function bootstrap() {
     const worldW = (RESOLUTION - 2) * COLS;
     const worldH = (RESOLUTION - 2) * ROWS;
 
-    // Seed random life globally
-    for (let i = 0; i < 5000; i++) {
-        grid.setAt(
-            Math.random() * worldW,
-            Math.random() * worldH,
-            0, 1, // Face 1: State
-            Math.floor(Math.random() * 4)
-        );
-    }
+    // Seed a dense colony in the center so it doesn't immediately die
+    // 1=Plant, 2=Herbi, 3=Carni
+    grid.paintCircle(worldW / 2, worldH / 2, 0, 1, 40, 1.0); // Large forest
+    grid.paintCircle(worldW / 2, worldH / 2, 0, 1, 15, 2.0); // Herd of herbivores
+    grid.paintCircle(worldW / 2, worldH / 2, 0, 1, 5, 3.0);  // Few carnivores
+
+    // Initialize dense age matrix for the colony
+    grid.paintCircle(worldW / 2, worldH / 2, 0, 3, 45, 1.0);
 
     const canvas = document.createElement('canvas');
     canvas.width = worldW;

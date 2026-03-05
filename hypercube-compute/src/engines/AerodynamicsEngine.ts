@@ -20,7 +20,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
     private uniformBuffer: GPUBuffer | null = null;
 
     public get name(): string {
-        return "Lattice Boltzmann D2Q9 (O(1))";
+        return "Aerodynamics LBM D2Q9";
     }
 
     public getRequiredFaces(): number {

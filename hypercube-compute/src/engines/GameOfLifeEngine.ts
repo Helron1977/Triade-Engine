@@ -26,7 +26,7 @@ export class GameOfLifeEngine implements IHypercubeEngine {
     }
 
     public get name(): string {
-        return "Game of Life Ecosystem (O1 Tile)";
+        return "GameOfLifeEngine";
     }
 
     public getRequiredFaces(): number {

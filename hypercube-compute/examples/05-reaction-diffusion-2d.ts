@@ -52,10 +52,14 @@ async function bootstrap() {
 
     async function tick() {
         const start = performance.now();
-        await grid.compute();
+
+        // 10 integration steps per frame so we can see the slow diffusion patterns grow
+        for (let i = 0; i < 10; i++) {
+            await grid.compute();
+        }
 
         Hypercube.autoRender(grid, canvas, {
-            faceIndex: 0,
+            faceIndex: 1, // Visualize Substance B (the pattern)
             colormap: 'heatmap',
             minVal: 0,
             maxVal: 0.5
