@@ -183,8 +183,43 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                         uy_out[i] = 0;
                         continue;
                     }
+                    // --- BOUNDARY CONDITIONS (Config Driven) ---
+                    const config = this.boundaryConfig;
+                    if (config) {
+                        // Left Inflow
+                        if (config.isLeftBoundary && x === 1 && config.left === 'INFLOW') {
+                            const inUx = config.inflowUx ?? 0.12;
+                            const inUy = config.inflowUy ?? 0.0;
+                            const inRho = config.inflowDensity ?? 1.0;
 
+                            ux_out[i] = inUx;
+                            uy_out[i] = inUy;
+                            const u_sq = inUx * inUx + inUy * inUy;
+                            const u_sq_15 = 1.5 * u_sq;
 
+                            out0[i] = cx_w[0] * inRho * (1.0 - u_sq_15);
+                            let cu;
+                            cu = inUx; out1[i] = cx_w[1] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            cu = inUy; out2[i] = cx_w[2] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            cu = -inUx; out3[i] = cx_w[3] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            cu = -inUy; out4[i] = cx_w[4] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            cu = inUx + inUy; out5[i] = cx_w[5] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            cu = -inUx + inUy; out6[i] = cx_w[6] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            cu = -inUx - inUy; out7[i] = cx_w[7] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            cu = inUx - inUy; out8[i] = cx_w[8] * inRho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                            continue;
+                        }
+
+                        // Right Outflow (Simple Extrapolation)
+                        if (config.isRightBoundary && x === nx - 2 && config.right === 'OUTFLOW') {
+                            out0[i] = out0[i - 1]; out1[i] = out1[i - 1]; out2[i] = out2[i - 1];
+                            out3[i] = out3[i - 1]; out4[i] = out4[i - 1]; out5[i] = out5[i - 1];
+                            out6[i] = out6[i - 1]; out7[i] = out7[i - 1]; out8[i] = out8[i - 1];
+                            ux_out[i] = ux_out[i - 1];
+                            uy_out[i] = uy_out[i - 1];
+                            continue;
+                        }
+                    }
 
                     // --- PULL STREAMING UNROLLED ---
                     // pfX is the population arriving FROM direction X.

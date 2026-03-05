@@ -86,15 +86,16 @@ export class HypercubeCpuGrid {
         engineFactory: () => IHypercubeEngine,
         numFaces: number = 6,
         isPeriodic: boolean = true,
-        useWorkers: boolean = true
+        useWorkers: boolean = true,
+        workerScriptPath?: string
     ): Promise<HypercubeCpuGrid> {
         const grid = new HypercubeCpuGrid(cols, rows, resolution, masterBuffer, engineFactory, numFaces, isPeriodic, useWorkers);
 
         if (useWorkers && typeof SharedArrayBuffer !== 'undefined' && masterBuffer.buffer instanceof SharedArrayBuffer) {
             grid.workerPool = new HypercubeWorkerPool();
             try {
-                await grid.workerPool.init(masterBuffer.buffer as SharedArrayBuffer);
-                console.info(`[HypercubeCpuGrid] WorkerPool initialized successfully.`);
+                await grid.workerPool.init(masterBuffer.buffer as SharedArrayBuffer, workerScriptPath);
+                console.info(`[HypercubeCpuGrid] WorkerPool initialized successfully with script: ${workerScriptPath || './cpu.worker.js'}`);
             } catch (error) {
                 console.warn("[HypercubeCpuGrid] WorkerPool initialization failed.", error);
                 grid.workerPool = null;
@@ -170,10 +171,6 @@ export class HypercubeCpuGrid {
         for (const f of faces) {
             this.synchronizeBoundaries(f);
         }
-
-        // if (this.boundaryConfig) {
-        //     BoundaryConditions.apply(this, this.boundaryConfig, faces);
-        // }
 
         const syncEnd = performance.now();
         this.stats.syncTimeMs = syncEnd - syncStart;

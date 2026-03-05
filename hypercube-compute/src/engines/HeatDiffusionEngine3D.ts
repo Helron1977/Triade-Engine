@@ -3,12 +3,23 @@ import { IHypercubeEngine } from "./IHypercubeEngine";
 export class HeatDiffusionEngine3D implements IHypercubeEngine {
     private alpha: number = 0.1; // Diffusion rate
 
+    get name(): string {
+        return "HeatDiffusionEngine3D-V4";
+    }
+
     getRequiredFaces(): number {
         return 2; // Face 0: Current temp, Face 1: Next temp
     }
 
     getConfig(): any {
         return { alpha: this.alpha };
+    }
+
+    init(faces: Float32Array[], nx: number, ny: number, nz: number): void {
+        // Clear buffers
+        for (const face of faces) {
+            face.fill(0);
+        }
     }
 
     applyConfig(config: any): void {
@@ -20,10 +31,14 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
         nx: number,
         ny: number,
         nz: number,
-        obstacles: Float32Array
+        chunkX?: number,
+        chunkY?: number,
+        chunkZ?: number
     ): void {
         const temp_in = faces[0];
         const temp_out = faces[1];
+        // Optional: obstacles could be in faces[2] if we wanted them
+        const obstacles = faces.length > 2 ? faces[2] : null;
 
         // Very basic 3D Laplacian for thermal diffusion
         for (let z = 1; z < nz - 1; z++) {
@@ -39,7 +54,7 @@ export class HeatDiffusionEngine3D implements IHypercubeEngine {
                 for (let x = 1; x < nx - 1; x++) {
                     const idx = zOff + yOff + x;
 
-                    if (obstacles[idx] > 0) {
+                    if (obstacles && obstacles[idx] > 0) {
                         temp_out[idx] = 0; // Cold wall
                         continue;
                     }

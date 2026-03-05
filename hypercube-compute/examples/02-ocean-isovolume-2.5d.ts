@@ -23,7 +23,8 @@ async function bootstrap() {
         () => new OceanEngine(),
         numFaces,
         true, // Periodic boundaries globally for the pool
-        true  // Multithreading on
+        true, // Multithreading on
+        '/cpu.worker.ts'
     );
 
     // Initial Splash

@@ -25,7 +25,8 @@ async function bootstrap() {
         () => new AerodynamicsEngine(),
         numFaces,
         false, // Not periodic
-        true   // Multithreading on
+        true,   // Multithreading on
+        '/cpu.worker.ts'
     );
 
     // Apply strict Global Boundaries

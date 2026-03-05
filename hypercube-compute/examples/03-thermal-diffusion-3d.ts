@@ -20,13 +20,13 @@ async function bootstrap() {
 
     const grid = await HypercubeCpuGrid.create(
         COLS, ROWS,
-        RESOLUTION,
+        { nx: RESOLUTION, ny: RESOLUTION, nz: NZ },
         masterBuffer,
         () => new HeatDiffusionEngine3D(),
         numFaces,
         false,
         true, // Multithreading on 
-        NZ    // Important! Z dimension
+        '/cpu.worker.ts'
     );
 
     // Initial Heat Drop in the center of the 3D volume
