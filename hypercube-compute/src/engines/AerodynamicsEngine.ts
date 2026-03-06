@@ -16,12 +16,44 @@ export class AerodynamicsEngine implements IHypercubeEngine {
     // WebGPU Attributes
     private pipelineLBM: GPUComputePipeline | null = null;
     private pipelineVorticity: GPUComputePipeline | null = null;
+    private pipelineSmoke: GPUComputePipeline | null = null;
+    private bindGroup0: GPUBindGroup | null = null;
+    private bindGroup1: GPUBindGroup | null = null;
     private uniformBuffer: GPUBuffer | null = null;
-    private parity: number = 0;
+    public parity: number = 0;
     public gpuEnabled: boolean = false;
 
     public get name(): string { return "AerodynamicsEngine LBM D2Q9"; }
     public getTags(): string[] { return ['aerodynamics', '2d', 'arctic', 'lbm']; }
+
+    /**
+     * @description Définit les faces sémantiques de l'aérodynamique.
+     */
+    public getSchema() {
+        return {
+            faces: [
+                { index: 18, label: 'Obstacles', isSynchronized: false, isReadOnly: true },
+                { index: 19, label: 'Velocity_X', isSynchronized: true },
+                { index: 20, label: 'Velocity_Y', isSynchronized: true },
+                { index: 21, label: 'Vorticity', isSynchronized: true },
+                { index: 22, label: 'Smoke_P0', isSynchronized: true },
+                { index: 23, label: 'Smoke_P1', isSynchronized: true }
+            ]
+        };
+    }
+
+    /**
+     * @description Définit la composition visuelle par défaut (Arctic).
+     */
+    public getVisualProfile() {
+        const p = this.parity ?? 0;
+        return {
+            styleId: 'arctic',
+            layers: [
+                { faceIndex: 22 + p, faceLabel: 'Smoke', role: 'primary' as const }
+            ]
+        };
+    }
 
     public getRequiredFaces(): number {
         // (9 pops P0 + 9 pops P1) + (obs, ux, uy, curl, smoke P0, smoke P1)
@@ -81,20 +113,16 @@ export class AerodynamicsEngine implements IHypercubeEngine {
     }
 
     public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
-        const shaderModule = device.createShaderModule({ code: this.wgslSource });
+        const shaderModule = device.createShaderModule({
+            code: this.wgslSource,
+            label: 'Aerodynamics Shader'
+        });
 
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'storage' }
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'uniform' }
-                }
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
             ]
         });
 
@@ -112,9 +140,33 @@ export class AerodynamicsEngine implements IHypercubeEngine {
             compute: { module: shaderModule, entryPoint: 'compute_vorticity' }
         });
 
+        this.pipelineSmoke = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: { module: shaderModule, entryPoint: 'compute_smoke' }
+        });
+
         this.uniformBuffer = device.createBuffer({
-            size: 64, // Increased to match common alignment
+            size: 64,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        // Initialize BindGroups for ping-pong
+        this.bindGroup0 = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: readBuffer } },
+                { binding: 1, resource: { buffer: writeBuffer } },
+                { binding: 2, resource: { buffer: this.uniformBuffer } }
+            ]
+        });
+
+        this.bindGroup1 = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: writeBuffer } },
+                { binding: 1, resource: { buffer: readBuffer } },
+                { binding: 2, resource: { buffer: this.uniformBuffer } }
+            ]
         });
 
         const strideFloats = stride / 4;
@@ -123,43 +175,62 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         const f32 = new Float32Array(uniformData);
 
         u32[0] = nx;
-        f32[1] = 0.12; // u0
+        u32[1] = ny;
         f32[2] = 1.95; // omega
         u32[3] = strideFloats;
+        u32[4] = this.parity;
+        u32[5] = 0; // Flags
 
         device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
         this.gpuEnabled = true;
     }
 
-    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
-        if (!this.pipelineLBM || !this.pipelineVorticity || !this.uniformBuffer) return;
 
-        // Current AerodynamicsEngine implementation expects a single buffer.
-        // We'll use readBuffer as the target to satisfy the interface for now.
-        const bindGroup = device.createBindGroup({
-            layout: this.pipelineLBM.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: { buffer: readBuffer } },
-                { binding: 1, resource: { buffer: this.uniformBuffer } }
-            ]
-        });
+    public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {
+        if (!this.pipelineLBM || !this.pipelineVorticity || !this.pipelineSmoke || !this.uniformBuffer || !this.bindGroup0 || !this.bindGroup1) return;
+
+        // Sync parity and flags
+        const u32 = new Uint32Array(2);
+        u32[0] = this.parity;
+
+        // Flags: Bit 0 = Left, 1 = Right, 2 = Top, 3 = Bottom
+        let flags = 0;
+        if (this.boundaryConfig) {
+            if (this.boundaryConfig.isLeftBoundary) flags |= 1;
+            if (this.boundaryConfig.isRightBoundary) flags |= 2;
+            if (this.boundaryConfig.isTopBoundary) flags |= 4;
+            if (this.boundaryConfig.isBottomBoundary) flags |= 8;
+        }
+        u32[1] = flags;
+        device.queue.writeBuffer(this.uniformBuffer, 16, u32); // Offset 16 (u32[4] and u32[5])
+
+        const bindGroup = (this.parity === 0) ? this.bindGroup0 : this.bindGroup1;
 
         const wgSize = 16;
         const wgX = Math.ceil(nx / wgSize);
         const wgY = Math.ceil(ny / wgSize);
 
-        const pass1 = commandEncoder.beginComputePass();
-        pass1.setBindGroup(0, bindGroup);
+        // 1. LBM Step (Ping-pong In -> Out)
+        const pass1 = commandEncoder.beginComputePass({ label: 'Aero GPU LBM' });
         pass1.setPipeline(this.pipelineLBM);
+        pass1.setBindGroup(0, bindGroup);
         pass1.dispatchWorkgroups(wgX, wgY, nz || 1);
         pass1.end();
 
-        const pass2 = commandEncoder.beginComputePass();
-        pass2.setBindGroup(0, bindGroup);
+        // 2. Vorticity Step (Uses just written Velocities in Out buffer)
+        const pass2 = commandEncoder.beginComputePass({ label: 'Aero GPU Vorticity' });
         pass2.setPipeline(this.pipelineVorticity);
+        pass2.setBindGroup(0, bindGroup);
         pass2.dispatchWorkgroups(wgX, wgY, nz || 1);
         pass2.end();
+
+        // 3. Smoke Advection Step (Ping-pong In -> Out)
+        const pass3 = commandEncoder.beginComputePass({ label: 'Aero GPU Smoke' });
+        pass3.setPipeline(this.pipelineSmoke);
+        pass3.setBindGroup(0, bindGroup);
+        pass3.dispatchWorkgroups(wgX, wgY, nz || 1);
+        pass3.end();
     }
 
     public compute(faces: Float32Array[], nx: number, ny: number, nz: number): void {
@@ -362,40 +433,60 @@ export class AerodynamicsEngine implements IHypercubeEngine {
     public get wgslSource(): string {
         return `
             struct Config {
-                mapSize: u32,
-                u0: f32,
+                nx: u32,
+                ny: u32,
                 omega: f32,
                 stride: u32,
+                parity: u32,
+                flags: u32,
             };
 
-            @group(0) @binding(0) var<storage, read_write> cube: array<f32>;
-            @group(0) @binding(1) var<uniform> config: Config;
+            @group(0) @binding(0) var<storage, read_write> cube_in: array<f32>;
+            @group(0) @binding(1) var<storage, read_write> cube_out: array<f32>;
+            @group(0) @binding(2) var<uniform> config: Config;
 
             const cx: array<f32, 9> = array<f32, 9>(0.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, -1.0, 1.0);
             const cy: array<f32, 9> = array<f32, 9>(0.0, 0.0, 1.0, 0.0, -1.0, 1.0, 1.0, -1.0, -1.0);
             const w: array<f32, 9> = array<f32, 9>(0.444444, 0.111111, 0.111111, 0.111111, 0.111111, 0.027777, 0.027777, 0.027777, 0.027777);
             const opp: array<u32, 9> = array<u32, 9>(0u, 3u, 4u, 1u, 2u, 7u, 8u, 5u, 6u);
 
-            fn get_face(f: u32, id: u32) -> f32 {
-                return cube[f * config.stride + id];
+            fn get_in(f: u32, id: u32) -> f32 {
+                return cube_in[f * config.stride + id];
             }
 
-            fn set_face(f: u32, id: u32, val: f32) {
-                cube[f * config.stride + id] = val;
+            fn get_out(f: u32, id: u32) -> f32 {
+                return cube_out[f * config.stride + id];
+            }
+
+            fn set_out(f: u32, id: u32, val: f32) {
+                cube_out[f * config.stride + id] = val;
             }
 
             @compute @workgroup_size(16, 16)
             fn compute_lbm(@builtin(global_invocation_id) id: vec3<u32>) {
                 let x = id.x;
                 let y = id.y;
-                let N = config.mapSize;
-                if (x == 0u || x >= N - 1u || y == 0u || y >= N - 1u) { return; }
-                let idx = y * N + x;
+                let NX = config.nx;
+                let NY = config.ny;
+                if (x == 0u || x >= NX - 1u || y == 0u || y >= NY - 1u) { return; }
+                let idx = y * NX + x;
 
-                let obs = get_face(18u, idx);
+                // Ping-pong parity logic
+                let offsetIn = config.parity * 9u;
+                let offsetOut = (1u - config.parity) * 9u;
+
+                // --- OBSTACLE PERSISTENCE ---
+                // Copy obstacle from In to Out to ensure it's available after swap
+                set_out(18u, idx, get_in(18u, idx));
+
+                let obs = get_in(18u, idx);
                 if (obs > 0.5) { 
-                    set_face(19u, idx, 0.0);
-                    set_face(20u, idx, 0.0);
+                    set_out(19u, idx, 0.0);
+                    set_out(20u, idx, 0.0);
+                    // Stationary equil (respect parity)
+                    for(var i: u32 = 0u; i < 9u; i = i + 1u) {
+                        set_out(offsetOut + i, idx, w[i]);
+                    }
                     return; 
                 }
 
@@ -403,35 +494,34 @@ export class AerodynamicsEngine implements IHypercubeEngine {
                 var ux: f32 = 0.0;
                 var uy: f32 = 0.0;
 
+                // Pull streaming
+                var f_pull: array<f32, 9>;
                 for(var i: u32 = 0u; i < 9u; i = i + 1u) {
-                    let f_val = get_face(i, idx);
-                    rho = rho + f_val;
-                    ux = ux + cx[i] * f_val;
-                    uy = uy + cy[i] * f_val;
+                   let nx = i32(x) - i32(cx[i]);
+                   let ny = i32(y) - i32(cy[i]);
+                   let n_idx = u32(ny) * NX + u32(nx);
+                   
+                   if (get_in(18u, n_idx) > 0.5) {
+                       f_pull[i] = get_in(offsetIn + opp[i], idx);
+                   } else {
+                       f_pull[i] = get_in(offsetIn + i, n_idx);
+                   }
+                   rho = rho + f_pull[i];
+                   ux = ux + cx[i] * f_pull[i];
+                   uy = uy + cy[i] * f_pull[i];
                 }
 
 
                 if (rho > 0.0) { ux = ux / rho; uy = uy / rho; }
-                set_face(19u, idx, ux);
-                set_face(20u, idx, uy);
+                set_out(19u, idx, ux);
+                set_out(20u, idx, uy);
 
-                let u_sq = ux * ux + uy * uy;
+                let u_sq_15 = 1.5 * (ux * ux + uy * uy);
+                let om_1 = 1.0 - config.omega;
                 for(var i: u32 = 0u; i < 9u; i = i + 1u) {
                     let cu = cx[i] * ux + cy[i] * uy;
-                    let feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sq);
-                    let f_post = get_face(i, idx) * (1.0 - config.omega) + feq * config.omega;
-
-                    var nx: i32 = i32(x) + i32(cx[i]);
-                    var ny: i32 = i32(y) + i32(cy[i]);
-                    if (ny < 0) { ny = i32(N) - 1; } else if (ny >= i32(N)) { ny = 0; }
-                    if (nx < 0 || nx >= i32(N)) { continue; }
-
-                    let n_idx = u32(ny) * N + u32(nx);
-                    if (get_face(18u, n_idx) > 0.5) {
-                        set_face(opp[i] + 9u, idx, f_post);
-                    } else {
-                        set_face(i + 9u, n_idx, f_post);
-                    }
+                    let feq = w[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - u_sq_15);
+                    set_out(offsetOut + i, idx, f_pull[i] * om_1 + feq * config.omega);
                 }
             }
 
@@ -439,28 +529,68 @@ export class AerodynamicsEngine implements IHypercubeEngine {
             fn compute_vorticity(@builtin(global_invocation_id) id: vec3<u32>) {
                 let x = id.x;
                 let y = id.y;
-                let N = config.mapSize;
-                if (x == 0u || x >= N - 1u || y == 0u || y >= N - 1u) { return; }
-                let idx = y * N + x;
+                let NX = config.nx;
+                let NY = config.ny;
+                if (x == 0u || x >= NX - 1u || y == 0u || y >= NY - 1u) { return; }
+                let idx = y * NX + x;
 
-                for(var i: u32 = 0u; i < 9u; i = i + 1u) {
-                    set_face(i, idx, get_face(i + 9u, idx));
+                // Read velocities from Out buffer (just written by LBM)
+                let dUy_dx = (get_out(20u, idx + 1u) - get_out(20u, idx - 1u)) * 0.5;
+                let dUx_dy = (get_out(19u, idx + NX) - get_out(19u, idx - NX)) * 0.5;
+                set_out(21u, idx, dUy_dx - dUx_dy);
+            }
+
+            @compute @workgroup_size(16, 16)
+            fn compute_smoke(@builtin(global_invocation_id) id: vec3<u32>) {
+                let x = id.x;
+                let y = id.y;
+                let NX = config.nx;
+                let NY = config.ny;
+                if (x == 0u || x >= NX - 1u || y == 0u || y >= NY - 1u) { return; }
+                let idx = y * NX + x;
+
+                let smokeInIdx = 22u + config.parity;
+                let smokeOutIdx = 22u + (1u - config.parity);
+
+                if (get_in(18u, idx) > 0.5) {
+                    set_out(smokeOutIdx, idx, 0.0);
+                    return;
                 }
 
-                let xM = max(x, 2u) - 1u;      // clamp to 1 
-                let xP = min(x + 1u, N - 2u);  // clamp to N-2
-                let yM = max(y, 2u) - 1u;
-                let yP = min(y + 1u, N - 2u);
+                // --- SMOKE SOURCE INJECTION ---
+                // If this is global left boundary, inject smoke
+                if ((config.flags & 1u) != 0u && x == 1u) {
+                    let pitch = NY / 20u;
+                    if ((y + 2u) % pitch <= 2u) {
+                        set_out(smokeOutIdx, idx, 1.0);
+                        return;
+                    }
+                }
 
-                var dxDist: f32 = 2.0;
-                if (x == 1u || x == N - 2u) { dxDist = 1.0; }
+                let vx = get_out(19u, idx);
+                let vy = get_out(20u, idx);
+                let sx = f32(x) - vx;
+                let sy = f32(y) - vy;
 
-                var dyDist: f32 = 2.0;
-                if (y == 1u || y == N - 2u) { dyDist = 1.0; }
+                let x0 = i32(floor(sx));
+                let y0 = i32(floor(sy));
+                let x1 = x0 + 1;
+                let y1 = y0 + 1;
+                let fx = sx - f32(x0);
+                let fy = sy - f32(y0);
 
-                let dUy_dx = (get_face(20u, y * N + xP) - get_face(20u, y * N + xM)) / dxDist;
-                let dUx_dy = (get_face(19u, yP * N + x) - get_face(19u, yM * N + x)) / dyDist;
-                set_face(21u, idx, dUy_dx - dUx_dy);
+                if (x0 >= 0 && x1 < i32(NX) && y0 >= 0 && y1 < i32(NY)) {
+                    let val00 = get_in(smokeInIdx, u32(y0) * NX + u32(x0));
+                    let val10 = get_in(smokeInIdx, u32(y0) * NX + u32(x1));
+                    let val01 = get_in(smokeInIdx, u32(y1) * NX + u32(x0));
+                    let val11 = get_in(smokeInIdx, u32(y1) * NX + u32(x1));
+                    
+                    let raw = mix(mix(val00, val10, fx), mix(val01, val11, fx), fy);
+                    // Slight diffusion/leak to match CPU behavior
+                    set_out(smokeOutIdx, idx, raw * 0.998);
+                } else {
+                    set_out(smokeOutIdx, idx, get_in(smokeInIdx, idx) * 0.99);
+                }
             }
         `;
     }

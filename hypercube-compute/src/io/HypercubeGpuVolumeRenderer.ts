@@ -92,8 +92,11 @@ export class HypercubeGpuVolumeRenderer {
         const u32 = new Uint32Array(uBuffer);
         const f32 = new Float32Array(uBuffer);
 
+        const firstChunk = grid.cubes.flat().find(c => c !== null);
+        const strideFloats = firstChunk ? firstChunk.stride / 4 : grid.nx * grid.ny * grid.nz;
+
         u32[0] = grid.nx; u32[1] = grid.ny; u32[2] = grid.nz;
-        u32[3] = grid.nx * grid.ny * grid.nz; // strideFace
+        u32[3] = strideFloats; // strideFace (respect alignment)
         u32[4] = options.faceIndex;
         u32[5] = options.obstacleFaceIndex ?? 999;
         f32[6] = options.minVal ?? 0.0;
@@ -145,15 +148,19 @@ export class HypercubeGpuVolumeRenderer {
                 }
                 const chunkUBuffer = this.chunkUniformBuffers[chunkIdx];
 
-                // Create or reuse bindgroup for THIS chunk
-                if (!this.chunkBindGroups[chunkIdx]) {
+                // Create or recreate bindgroup if buffer has changed (due to swap)
+                const currentBuffer = chunk.gpuReadBuffer!;
+
+                if (!this.chunkBindGroups[chunkIdx] || (this as any)._lastBoundBuffers?.[chunkIdx] !== currentBuffer) {
                     this.chunkBindGroups[chunkIdx] = device.createBindGroup({
                         layout: this.pipeline!.getBindGroupLayout(0),
                         entries: [
-                            { binding: 0, resource: { buffer: chunk.gpuReadBuffer } },
+                            { binding: 0, resource: { buffer: currentBuffer } },
                             { binding: 1, resource: { buffer: chunkUBuffer } }
                         ]
                     });
+                    if (!(this as any)._lastBoundBuffers) (this as any)._lastBoundBuffers = [];
+                    (this as any)._lastBoundBuffers[chunkIdx] = currentBuffer;
                 }
 
                 // Update Chunk specific uniforms

@@ -50,9 +50,9 @@ fn vs_main(
         // Vorticity (Red Highlights)
         if (u.vorticityIdx < 100u) {
             let vData = cube[u.vorticityIdx * u.strideFace + idx];
-            let vRes = min(1.0, abs(vData) * 30.0);
-            if (vRes > 0.15) {
-                let tR = clamp((vRes - 0.15) * 1.5, 0.0, 1.0);
+            let vRes = min(1.0, abs(vData) * 60.0); // Boosted from 30.0 to 60.0
+            if (vRes > 0.1) {
+                let tR = clamp((vRes - 0.1) * 2.0, 0.0, 1.0);
                 color = mix(color, vec4<f32>(1.0, 0.0, 0.0, 1.0), tR);
             }
         }
@@ -72,8 +72,9 @@ fn vs_main(
         color = vec4<f32>(0.2, 0.2, 0.2, 1.0);
     }
 
-    // Skip transparent quads
-    if (val < 0.01 && !isObs) {
+    // Skip transparent quads (Only if colormap doesn't have a solid background)
+    // Arctic (3u) has a solid light-blue background, so we don't skip it.
+    if (val < 0.001 && !isObs && u.colormapIdx != 3u) {
         return VertexOutput(vec4<f32>(0.0, 0.0, 2.0, 1.0), vec4<f32>(0.0));
     }
 

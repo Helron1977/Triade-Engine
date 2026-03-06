@@ -17,6 +17,29 @@ export class OceanEngine implements IHypercubeEngine {
     public get name(): string { return "OceanEngine 2.5D"; }
     public getTags(): string[] { return ['ocean', '2.5d', 'isometric', 'waves']; }
 
+    /**
+     * @description Définit les faces sémantiques de l'océanographie.
+     */
+    public getSchema() {
+        return {
+            faces: [
+                { index: 19, label: 'Velocity_X' },
+                { index: 20, label: 'Velocity_Y' },
+                { index: 22, label: 'Water_Height' },
+                { index: 23, label: 'Biology' }
+            ]
+        };
+    }
+
+    /**
+     * @description Définit la composition visuelle par défaut (Ocean).
+     */
+    public getVisualProfile() {
+        return {
+            styleId: 'ocean'
+        };
+    }
+
     public getRequiredFaces(): number { return 25; }
 
     // ── GPU REFACTO V5.4 ── La Grid contrôle totalement la parité
@@ -75,7 +98,7 @@ export class OceanEngine implements IHypercubeEngine {
 
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
-                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
                 { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
                 { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
             ]

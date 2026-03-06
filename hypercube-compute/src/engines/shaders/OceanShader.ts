@@ -5,7 +5,7 @@ struct Uniforms {
     bioDiffusion: f32, bioGrowth: f32, parity: u32
 };
 
-@group(0) @binding(0) var<storage, read > cube_in: array<f32>;
+@group(0) @binding(0) var<storage, read_write> cube_in: array<f32>;
 @group(0) @binding(1) var<storage, read_write > cube_out: array<f32>;
 @group(0) @binding(2) var<uniform>u: Uniforms;
 

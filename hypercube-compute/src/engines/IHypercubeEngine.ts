@@ -99,6 +99,45 @@ export interface IHypercubeEngine {
      * @description Identifie les capacités et caractéristiques du moteur pour le rendu automatique.
      */
     getTags?(): string[];
+
+    /**
+     * @description Retourne le schéma sémantique des données contenues dans les faces.
+     */
+    getSchema?(): EngineSchema;
+
+    /**
+     * @description Retourne le profil visuel par défaut pour l'affichage des résultats.
+     */
+    getVisualProfile?(): VisualProfile;
+}
+
+/**
+ * Définit le rôle sémantique de chaque face de données.
+ */
+export interface EngineSchema {
+    faces: Array<{
+        index: number;
+        label: string;
+        isSynchronized?: boolean;
+        isReadOnly?: boolean;
+    }>;
+}
+
+/**
+ * Définit comment le moteur doit être rendu visuellement.
+ */
+export interface VisualProfile {
+    /** ID d'un style prédéfini dans le VisualRegistry (facultatif) */
+    styleId?: string;
+    layers?: Array<{
+        faceIndex?: number; // Index physique
+        faceLabel?: string; // Libellé sémantique (préféré)
+        role: 'primary' | 'secondary' | 'obstacle' | 'vorticity' | 'heat' | 'binary';
+        colormap?: 'grayscale' | 'heatmap' | 'ocean' | 'arctic' | 'vorticity';
+        range?: [number, number];
+        alpha?: number;
+    }>;
+    defaultMode?: 'topdown' | 'isometric' | 'isovolume' | '2.5d';
 }
 
 
