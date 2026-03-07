@@ -51,7 +51,7 @@ export class HeatmapEngine implements IHypercubeEngine {
     /**
      * Initialisation spécifique au GPU. Compile les shaders et prépare le layout.
      */
-    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, uniformBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         const shaderModule = device.createShaderModule({ code: this.wgslSource });
 
         const bindGroupLayout = device.createBindGroupLayout({
@@ -83,7 +83,7 @@ export class HeatmapEngine implements IHypercubeEngine {
             layout: pipelineLayout, compute: { module: shaderModule, entryPoint: 'compute_diffusion' }
         });
 
-        const uniformBuffer = device.createBuffer({
+        const gpuUniformBuffer = device.createBuffer({
             size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
@@ -101,10 +101,10 @@ export class HeatmapEngine implements IHypercubeEngine {
         f32[4] = this.weight;
         u32[5] = strideFloats;
 
-        device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+        device.queue.writeBuffer(gpuUniformBuffer, 0, uniformData);
 
         // We will store the uniform buffer but create bind groups at dispatch time for safety
-        (this as any).gpuUniformBuffer = uniformBuffer;
+        (this as any).gpuUniformBuffer = gpuUniformBuffer;
     }
 
     public computeGPU(device: GPUDevice, commandEncoder: GPUCommandEncoder, nx: number, ny: number, nz: number, readBuffer: GPUBuffer, writeBuffer: GPUBuffer): void {

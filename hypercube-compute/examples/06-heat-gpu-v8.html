@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V8: Pure Declarative Heat (GPU)</title>
+    <link rel="stylesheet" href="./showcase.css">
+    <style>
+        #hud {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: #00ffcc;
+            font-family: monospace;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body
+    style="background: #050505; margin: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh;">
+
+    <div class="showcase-title" style="top: 30px;">V8 SANDBOX: Declarative Engine</div>
+
+    <div id="nav" style="position: fixed; top: 20px; left: 20px; z-index: 1000;">
+        <a href="/index.html"
+            style="color: #00ffcc; text-decoration: none; font-family: sans-serif; font-size: 0.8rem; border: 1px solid #00ffcc; padding: 5px 10px; border-radius: 4px;">←
+            All Examples</a>
+    </div>
+
+    <div class="showcase-description">
+        <h2>06: Heat Diffusion V8 GPU</h2>
+        <p>Preuve de concept de l'architecture V8. Contrat déclaratif (Manifest) et exécution GPU optimisée ("Ping-Pong"
+            Zero-Copy).</p>
+        <p style="margin-top:10px; font-size: 0.8rem; color: #ff00ff;">Moteur : HeatDiffusionV8 (V8 Core)</p>
+    </div>
+    <script type="module" src="./06-heat-gpu-v8.ts"></script>
+</body>
+
+</html>

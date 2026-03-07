@@ -123,7 +123,7 @@ export class VolumeDiffusionEngine implements IHypercubeEngine {
     private wgSizeZ: number = 4;
     private wgSizeCopy: number = 256;
 
-    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, uniformBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         // Dynamically scale workgroup sizes to match hardware limits (default 256, often 512 or 1024)
         const maxInvoc = device.limits.maxComputeInvocationsPerWorkgroup || 256;
         if (maxInvoc >= 1024) {

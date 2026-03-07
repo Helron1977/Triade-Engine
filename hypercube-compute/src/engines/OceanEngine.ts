@@ -77,11 +77,13 @@ export class OceanEngine implements IHypercubeEngine {
         if (typeof config.parity === 'number') this.parity = config.parity;
     }
 
+
     // ── GPU REFACTO V5.4 ──
     public initGPU(
         device: GPUDevice,
         readBuffer: GPUBuffer,
         writeBuffer: GPUBuffer,
+        uniformBuffer: GPUBuffer,
         stride: number,
         nx: number,
         ny: number,

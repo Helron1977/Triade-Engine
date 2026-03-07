@@ -51,10 +51,8 @@ export class GameOfLifeEngine implements IHypercubeEngine {
     private uniformBuffer: GPUBuffer | null = null;
     public gpuEnabled: boolean = false;
     private frameCounter: number = 0;
-    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
-        const wgSizeX = 16;
-        const wgSizeY = 16;
 
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, uniformBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         const shaderModule = device.createShaderModule({ code: this.getWgslSource() });
 
         const bindGroupLayout = device.createBindGroupLayout({

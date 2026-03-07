@@ -6,9 +6,13 @@ export class HypercubeGPUContext {
 
     public static get device(): GPUDevice {
         if (!this._device) {
-            throw new Error("[HypercubeGPUContext] WebGPU device n'est pas initialisé. Appelez HypercubeGPUContext.init() d'abord.");
+            throw new Error("[HypercubeGPUContext] WebGPU device n'est pas initialisé. Appelez HypercubeGPUContext.init() avant d'instancier la Factory ou la Grille.");
         }
         return this._device;
+    }
+
+    public static get isInitialized(): boolean {
+        return this._device !== null;
     }
 
     static async init(): Promise<boolean> {

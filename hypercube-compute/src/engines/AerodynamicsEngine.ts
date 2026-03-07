@@ -92,10 +92,8 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         }
         return res;
     }
-
     public init(faces: Float32Array[], nx: number, ny: number, nz: number, isWorker: boolean = false): void {
-        if (isWorker) return; // Do not overwrite SAB data initialized by HypercubeGrid
-
+        if (isWorker) return;
         const u0 = 0.12;
         for (let idx = 0; idx < nx * ny * nz; idx++) {
             const rho = 1.0;
@@ -112,7 +110,7 @@ export class AerodynamicsEngine implements IHypercubeEngine {
         }
     }
 
-    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, uniformBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         const shaderModule = device.createShaderModule({
             code: this.wgslSource,
             label: 'Aerodynamics Shader'

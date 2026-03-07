@@ -84,6 +84,7 @@ export interface IHypercubeEngine {
      * @param nz Profondeur
      */
     initGPU?(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, uniformBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void;
+
     /**
      * Dispatch GPU (Optionnel).
      * @param device Le GPUDevice actif.

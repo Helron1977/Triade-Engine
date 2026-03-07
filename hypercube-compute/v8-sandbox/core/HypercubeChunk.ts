@@ -1,7 +1,8 @@
+/// <reference types="@webgpu/types" />
 import { HypercubeMasterBuffer } from './HypercubeMasterBuffer';
 import type { IHypercubeEngine } from '../engines/IHypercubeEngine';
-import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
-import { HypercubeGpuResource } from './gpu/HypercubeGpuResource';
+import { HypercubeGPUContext } from '../../src/core/gpu/HypercubeGPUContext';
+import { HypercubeGpuResource } from './HypercubeGpuResource';
 
 export class HypercubeChunk {
     public readonly nx: number;
@@ -67,7 +68,7 @@ export class HypercubeChunk {
         this.engine = engine;
     }
 
-    initGPU() {
+    initGPU(uniformBuffer?: GPUBuffer) {
         if (!this.engine) return;
 
         const totalSize = this.faces.length * this.stride;
@@ -76,10 +77,6 @@ export class HypercubeChunk {
 
         this.pushToGPU();
 
-        const device = HypercubeGPUContext.device;
-        if (this.engine.initGPU) {
-            this.engine.initGPU(device, this.gpuReadBuffer!, this.gpuWriteBuffer!, null!, this.stride, this.nx, this.ny, this.nz);
-        }
     }
 
     /**

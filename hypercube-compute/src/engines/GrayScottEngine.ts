@@ -60,7 +60,7 @@ export class GrayScottEngine implements IHypercubeEngine {
         faces[1].fill(0.0);
     }
 
-    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
+    public initGPU(device: GPUDevice, readBuffer: GPUBuffer, writeBuffer: GPUBuffer, uniformBuffer: GPUBuffer, stride: number, nx: number, ny: number, nz: number): void {
         this.lastStride = stride / 4;
         const shaderModule = device.createShaderModule({ code: this.getWgslSource() });
 

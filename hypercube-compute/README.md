@@ -42,8 +42,17 @@ The `Hypercube` class automatically handles:
 3.  **Diffusion Thermique 3D** : Laplacien 3D pur sur >200k cellules.
 4.  **Life Ecosystem** : Automate cellulaire à 4 états (Vide, Plante, Herbi, Carni).
 5.  **Gray-Scott Organic** : Morphogénèse (Turing patterns / Zèbre).
+6.  **V8 Declarative (Pure Heat)** : L'aboutissement [V8 Architecture](./docs/v8-declarative.md). Simulation agnostique du backend (CPU/GPU).
 
 ---
+
+## 🏗️ Architecture V8 Declarative (Alpha)
+Dernière évolution majeure, le V8 sépare les lois physiques du matériel :
+- **Agnosticisme** : Le même code tourne sur CPU (Multithread) ou GPU (WebGPU).
+- **Zéro-Effort** : Manipulation sémantique via `Shapes`.
+- **Performance** : Pipeline "Zero-Stall" et synchronisation inter-chunks VRAM.
+
+👉 En savoir plus : [Guide de l'architecture V8](./docs/v8-declarative.md)
 
 ## 🚀 Built-in Engines (The Showcase)
 

@@ -1,6 +1,8 @@
-import { HypercubeChunk } from '../src/core/HypercubeChunk';
-import type { IHypercubeEngine } from '../src/engines/IHypercubeEngine';
+import { HypercubeChunk } from '../v8-sandbox/core/HypercubeChunk';
+import type { IHypercubeEngine } from '../v8-sandbox/engines/IHypercubeEngine';
 import { EngineRegistry } from '../src/core/EngineRegistry';
+import { V8EngineShim } from '../v8-sandbox/core/V8EngineShim';
+import type { EngineDescriptor } from '../v8-sandbox/engines/EngineManifest';
 
 /**
  * Script de base exécuté par les instances Web Worker de la HypercubeWorkerPool.
@@ -68,12 +70,21 @@ self.onmessage = (e: MessageEvent) => {
         let cube = chunkCache.get(cubeOffset);
 
         if (!cube) {
-            // 1. Instancier l'Engine dynamique via le Registry
+            // 1. Instancier l'Engine (V8 Shim ou Registry Classique)
             let engine: IHypercubeEngine;
             try {
-                engine = EngineRegistry.create(engineName, engineConfig);
+                if (data.descriptor) {
+                    // V8 PATH: Instanciation via Descripteur Déclaratif
+                    engine = new V8EngineShim(data.descriptor);
+                    if (data.engineConfig) {
+                        (engine as any).applyConfig?.(data.engineConfig);
+                    }
+                } else {
+                    // LEGACY PATH: Via le registre de classes
+                    engine = EngineRegistry.create(engineName, engineConfig) as any;
+                }
             } catch (err: any) {
-                console.error(err.message);
+                console.error(`[Worker CPU] Echec de création du moteur: ${err.message}`);
                 postMessage({ type: 'DONE', success: false, error: err.message });
                 return;
             }
