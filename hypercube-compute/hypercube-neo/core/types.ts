@@ -192,6 +192,18 @@ export interface HypercubeConfig {
     params: Record<string, any>;
     objects?: VirtualObject[]; // Spatially distributed objects
     mode: 'cpu' | 'gpu';
-    executionMode?: 'mono' | 'multi'; // Defaults to 'mono' if not specified
-    workers?: number; // Number of workers for 'multi' mode
+    executionMode?: 'mono' | 'parallel';
+    workers?: number;
+}
+
+/**
+ * A Self-contained Manifest (V4) defining both the engine and the configuration.
+ * This is the Single Source of Truth for a simulation "Case".
+ */
+export interface HypercubeManifest {
+    $schema?: string;
+    name: string;
+    version: string;
+    engine: EngineDescriptor;
+    config: HypercubeConfig;
 }

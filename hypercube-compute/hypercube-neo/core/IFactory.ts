@@ -1,4 +1,4 @@
-import { HypercubeConfig, EngineDescriptor } from './types';
+import { HypercubeConfig, EngineDescriptor, HypercubeManifest } from './types';
 
 /**
  * Interface for the Hypercube Factory.
@@ -11,7 +11,12 @@ export interface IFactory {
     createVirtualGrid(config: HypercubeConfig, descriptor: EngineDescriptor): any;
 
     /**
-     * Instantiate the real grid (CPU or GPU) and orchestration proxy.
+     * Load a self-contained manifest (V4).
+     */
+    fromManifest(url: string): Promise<HypercubeManifest>;
+
+    /**
+     * Build the real grid (CPU or GPU) and orchestration proxy.
      */
     build(config: HypercubeConfig, descriptor: EngineDescriptor): Promise<any>;
 }

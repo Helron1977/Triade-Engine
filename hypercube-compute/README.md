@@ -46,13 +46,19 @@ The `Hypercube` class automatically handles:
 
 ---
 
-## 🏗️ Architecture V8 Declarative (Alpha)
-Dernière évolution majeure, le V8 sépare les lois physiques du matériel :
-- **Agnosticisme** : Le même code tourne sur CPU (Multithread) ou GPU (WebGPU).
-- **Zéro-Effort** : Manipulation sémantique via `Shapes`.
-- **Performance** : Pipeline "Zero-Stall" et synchronisation inter-chunks VRAM.
+## 🏗️ Architecture V8 & Neo (Manifest-first)
+Dernière évolution majeure, Hypercube Neo sépare intégralement les lois physiques du matériel via un **Manifeste JSON (SSOT)** :
+- **Agnosticisme** : Le même fichier définit les faces, les règles et la géométrie.
+- **V4 Manifest** : Une structure hiérarchique puissante pour configurer vos cas de simulation.
+- **Performance** : Pipeline "Zero-Stall" et multithreading natif.
 
-👉 En savoir plus : [Guide de l'architecture V8](./docs/v8-declarative.md)
+👉 **Documentation Neo V4** :
+- [Guide du Manifeste (SSOT)](./docs/neo/manifest-v4.md)
+- [Couche Physics (Engine)](./docs/neo/engine-layer.md)
+- [Couche Géométrie (Objects)](./docs/neo/objects-layer.md)
+- [Intégration JS/TS](./docs/neo/integration.md)
+
+---
 
 ## 🚀 Built-in Engines (The Showcase)
 

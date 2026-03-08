@@ -1,5 +1,5 @@
 import { IFactory } from './IFactory';
-import { HypercubeConfig, EngineDescriptor } from './types';
+import { HypercubeConfig, EngineDescriptor, HypercubeManifest } from './types';
 import { VirtualGrid } from './VirtualGrid';
 import { MasterBuffer } from './MasterBuffer';
 import { NeoEngineProxy } from './NeoEngineProxy';
@@ -26,13 +26,13 @@ export class HypercubeNeoFactory implements IFactory {
     }
 
     /**
-     * Load a configuration from a JSON manifest URL or local path.
+     * Load a self-contained manifest (V4).
      */
-    public async fromManifest(url: string): Promise<HypercubeConfig> {
+    public async fromManifest(url: string): Promise<HypercubeManifest> {
         try {
             const response = await fetch(url);
             if (!response.ok) throw new Error(`Failed to load manifest: ${response.statusText}`);
-            return await response.json() as HypercubeConfig;
+            return await response.json() as HypercubeManifest;
         } catch (e) {
             console.error("Factory: Error loading manifest", e);
             throw e;

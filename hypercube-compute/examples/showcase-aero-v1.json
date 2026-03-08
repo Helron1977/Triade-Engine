@@ -1,100 +1,211 @@
 {
-    "dimensions": {
-        "nx": 512,
-        "ny": 512,
-        "nz": 1
-    },
-    "chunks": {
-        "x": 3,
-        "y": 2
-    },
-    "boundaries": {
-        "all": {
-            "role": "wall"
-        }
-    },
-    "engine": "Aerodynamics-Fidelity",
-    "params": {},
-    "objects": [
-        {
-            "id": "grid_init",
-            "type": "rect",
-            "position": {
-                "x": 0,
-                "y": 0
+    "$schema": "https://hypercube-neo.dev/schema/v4.json",
+    "name": "Aerodynamics Showcase 01 - Biplane NACA0016 + Bluff Body",
+    "version": "1.0.0",
+    "engine": {
+        "name": "Aerodynamics-Fidelity",
+        "version": "1.0.0",
+        "faces": [
+            {
+                "name": "f0",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
             },
-            "dimensions": {
-                "w": 512,
-                "h": 512
+            {
+                "name": "f1",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
             },
-            "properties": {
-                "f0": 0.4348,
-                "f1": 0.1559,
-                "f2": 0.1089,
-                "f3": 0.0689,
-                "f4": 0.1089,
-                "f5": 0.0416,
-                "f6": 0.0163,
-                "f7": 0.0163,
-                "f8": 0.0416,
-                "vx": 0.15,
-                "vy": 0.0,
-                "smoke": 0.0
+            {
+                "name": "f2",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
             },
-            "rasterMode": "replace"
+            {
+                "name": "f3",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "f4",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "f5",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "f6",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "f7",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "f8",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "obstacles",
+                "type": "mask",
+                "isSynchronized": true,
+                "isReadOnly": true
+            },
+            {
+                "name": "vx",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "vy",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "vorticity",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            },
+            {
+                "name": "smoke",
+                "type": "scalar",
+                "isSynchronized": true,
+                "isPersistent": false
+            }
+        ],
+        "rules": [
+            {
+                "type": "lbm-aero-fidelity-v1",
+                "method": "BGK",
+                "source": "f0",
+                "params": {
+                    "omega": 1.75,
+                    "inflowUx": 0.15,
+                    "inflowUy": 0.0
+                }
+            }
+        ],
+        "requirements": {
+            "ghostCells": 1,
+            "pingPong": true
         },
-        {
-            "id": "bluff_body",
-            "type": "circle",
-            "position": {
-                "x": 100,
-                "y": 256
-            },
-            "dimensions": {
-                "w": 40,
-                "h": 40
-            },
-            "properties": {
-                "obstacles": 1.0,
-                "smoke": 0.5
-            },
-            "rasterMode": "replace"
+        "parameters": {},
+        "outputs": []
+    },
+    "config": {
+        "dimensions": {
+            "nx": 512,
+            "ny": 512,
+            "nz": 1
         },
-        {
-            "id": "wing_top",
-            "type": "polygon",
-            "position": {
-                "x": 180,
-                "y": 180
-            },
-            "dimensions": {
-                "w": 80,
-                "h": 20
-            },
-            "points": [],
-            "properties": {
-                "obstacles": 1.0
-            },
-            "rasterMode": "replace"
+        "chunks": {
+            "x": 3,
+            "y": 2
         },
-        {
-            "id": "wing_bottom",
-            "type": "polygon",
-            "position": {
-                "x": 190,
-                "y": 330
+        "boundaries": {
+            "all": {
+                "role": "wall"
+            }
+        },
+        "mode": "cpu",
+        "executionMode": "parallel",
+        "objects": [
+            {
+                "id": "grid_init",
+                "type": "rect",
+                "position": {
+                    "x": 0,
+                    "y": 0
+                },
+                "dimensions": {
+                    "w": 512,
+                    "h": 512
+                },
+                "properties": {
+                    "f0": 0.4348,
+                    "f1": 0.1559,
+                    "f2": 0.1089,
+                    "f3": 0.0689,
+                    "f4": 0.1089,
+                    "f5": 0.0416,
+                    "f6": 0.0163,
+                    "f7": 0.0163,
+                    "f8": 0.0416,
+                    "vx": 0.15,
+                    "vy": 0.0,
+                    "smoke": 0.0
+                },
+                "rasterMode": "replace"
             },
-            "dimensions": {
-                "w": 80,
-                "h": 20
+            {
+                "id": "bluff_body",
+                "type": "circle",
+                "position": {
+                    "x": 100,
+                    "y": 256
+                },
+                "dimensions": {
+                    "w": 40,
+                    "h": 40
+                },
+                "properties": {
+                    "obstacles": 1.0,
+                    "smoke": 0.5
+                },
+                "rasterMode": "replace"
             },
-            "points": [],
-            "properties": {
-                "obstacles": 1.0
+            {
+                "id": "wing_top",
+                "type": "polygon",
+                "position": {
+                    "x": 180,
+                    "y": 180
+                },
+                "dimensions": {
+                    "w": 80,
+                    "h": 20
+                },
+                "points": [],
+                "properties": {
+                    "obstacles": 1.0
+                },
+                "rasterMode": "replace"
             },
-            "rasterMode": "replace"
-        }
-    ],
-    "mode": "cpu",
-    "executionMode": "parallel"
+            {
+                "id": "wing_bottom",
+                "type": "polygon",
+                "position": {
+                    "x": 190,
+                    "y": 330
+                },
+                "dimensions": {
+                    "w": 80,
+                    "h": 20
+                },
+                "points": [],
+                "properties": {
+                    "obstacles": 1.0
+                },
+                "rasterMode": "replace"
+            }
+        ]
+    }
 }

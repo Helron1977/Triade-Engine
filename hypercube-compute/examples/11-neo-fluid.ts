@@ -28,39 +28,18 @@ async function main() {
     // Using 120 points for high-fidelity contour (reduces aliasing noise)
     const wingPoints = NacaHelper.generateNaca4(0.00, 0.0, 0.16, 80, 120, -12 * Math.PI / 180);
 
-    const aeroDescriptor: EngineDescriptor = {
-        name: 'Aerodynamics-Fidelity', version: '1.0.0',
-        faces: [
-            { name: 'f0', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f1', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f2', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f3', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f4', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f5', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f6', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f7', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'f8', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'obstacles', type: 'mask', isSynchronized: true, isReadOnly: true },
-            { name: 'vx', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'vy', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'vorticity', type: 'scalar', isSynchronized: true, isPersistent: false },
-            { name: 'smoke', type: 'scalar', isSynchronized: true, isPersistent: false }
-        ],
-        rules: [{ type: 'lbm-aero-fidelity-v1', method: 'Custom', source: 'f0', params: { omega: 1.75, inflowUx: 0.15 } }],
-        requirements: { ghostCells: 1, pingPong: true },
-        parameters: {}, outputs: []
-    };
 
     // experiment: hybrid manifest strategy (JSON + TS)
-    const config = await factory.fromManifest('showcase-aero-v1.json');
+    const manifest = await factory.fromManifest('showcase-aero-v1.json');
+    const { config, engine: descriptor } = manifest;
 
     // Inject dynamic NACA points into the manifest objects
-    const wingTop = config.objects?.find(o => o.id === 'wing_top');
+    const wingTop = config.objects?.find((o: any) => o.id === 'wing_top');
     if (wingTop) wingTop.points = wingPoints;
-    const wingBottom = config.objects?.find(o => o.id === 'wing_bottom');
+    const wingBottom = config.objects?.find((o: any) => o.id === 'wing_bottom');
     if (wingBottom) wingBottom.points = wingPoints;
 
-    const engine = await factory.build(config, aeroDescriptor);
+    const engine = await factory.build(config, descriptor);
 
     const NX = config.dimensions.nx;
     const NY = config.dimensions.ny;
