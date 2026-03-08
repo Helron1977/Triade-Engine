@@ -11,7 +11,9 @@ Welcome to the **Hypercube Neo** documentation. From V4 onwards, the engine is e
    - Dimensions, Chunks, Mode, Boundaries
 4. [Objects & Physics Layer (`objects`)](./objects-layer.md)
    - Shapes (Circle, Poly, Rect), Properties, Animation
-5. [Code Integration Snippets](./integration.md)
+5. [Showcase: Aerodynamics LBM Guide](./showcase-aero.md)
+   - Specific Knobs (Omega, Inflow, Smoke)
+6. [Code Integration Snippets](./integration.md)
 
 ---
 
