@@ -1,92 +1,46 @@
-# Hypercube Neo - Cognitive Copilot 🚀
+# Hypercube Neo: The Cognitive Simulation Core
 
-Hypercube Neo est une réimplémentation moderne, déclarative et modulaire du moteur Hypercube, conçue pour la performance multi-thread et la fidélité physique absolue.
+Hypercube Neo is the high-performance, autonomous evolution of the Hypercube Compute engine. It is designed to be a **Single Source of Truth** for physical simulations, leveraging a unified declarative manifest to orchestrate both CPU and GPU execution.
 
-## 🌟 Principes Clés
+## 🚀 Key Features
 
-1.  **Parité 1:1** : Le noyau `NeoAeroKernel` est mathématiquement identique au moteur legacy (erreur de 0.0 confirmée par tests).
-2.  **Architecture Déclarative** : Définissez votre simulation via un JSON simple (EngineDescriptor et HypercubeConfig).
-3.  **Performance Native** : Optimisation **Zero-Copy** pour éliminer les copies mémoire inutiles entre les étapes de calcul.
-4.  **Multi-Chunk** : Décomposition automatique du domaine pour le parallélisme CPU/GPU.
+- **Unified Manifest**: Define your engine, grid configuration, and visual profile in a single JSON file.
+- **Autonomous Architecture**: Zero dependencies on legacy v4/v8 folders.
+- **Hybrid Execution**: 
+  - **CPU (Multi-Threaded)**: Optimized LBM and Stencil kernels for modern processors via Web Workers and SharedArrayBuffers.
+  - **GPU (WebGPU)**: Direct VRAM-to-VRAM computation with compute shaders, eliminating CPU-GPU bottlenecks.
+- **Zero-Copy Memory**: MasterBuffer architecture ensures efficient data sharing between chunks.
 
----
+## 📁 Repository Structure
 
-## 🛠️ Guide d'Utilisation (API)
+- `/core`: The heart of the engine (MasterBuffer, Dispatchers, Factory).
+  - `/gpu`: Dedicated WebGPU context and pipeline management.
+  - `/kernels`: Pure numerical algorithms (LBM, Advection, Diffusion).
+- `/io`: Input/Output adapters (WebHooks, Canvas Rendering).
+- `/showcase`: Dedicated demo hub for Neo simulations.
+- `/tests`: Fidelity and orchestration validation suite.
 
-### 1. Déclarer le Moteur (EngineDescriptor)
-Définit les "visages" (faces) de données et les règles physiques.
+## 🛠️ Usage for Novices
 
+To start a Neo simulation, you don't need to write complex code. You only need a **Manifest**.
+
+### 1. The Manifest Concept
+A manifest tells Neo:
+- **"What is the physics?"** (The `engine` section)
+- **"How big is the world?"** (The `config` section)
+- **"How should it look?"** (The `visualProfile` section)
+
+### 2. High-Level Factory
 ```typescript
-const aeroDescriptor: EngineDescriptor = {
-    name: 'Aerodynamics-Neo',
-    version: '1.0.0',
-    faces: [
-        { name: 'f0', type: 'scalar', isSynchronized: true, isPersistent: false }, // Population LBM
-        { name: 'vx', type: 'scalar', isSynchronized: true },                      // Vitesse X
-        { name: 'smoke', type: 'scalar', isSynchronized: true }                  // Traceur
-        // ... (f1-f8, vy, vorticity, obstacles)
-    ],
-    rules: [
-        { type: 'aero-fidelity', method: 'Custom', source: 'f0', params: { omega: 1.75, inflowUx: 0.15 } }
-    ],
-    requirements: { ghostCells: 1, pingPong: true }
-};
-```
+import { HypercubeNeoFactory } from './core/HypercubeNeoFactory';
 
-### 2. Configurer la Simulation (HypercubeConfig)
-Définit la résolution, le découpage et les objets physiques.
-
-```typescript
-const config: HypercubeConfig = {
-    dimensions: { nx: 512, ny: 512, nz: 1 },
-    chunks: { x: 2, y: 2 },                      // Découpe en 4 chunks pour le parallélisme
-    boundaries: { all: { role: 'wall' } },
-    engine: 'Aerodynamics-Neo',
-    objects: [
-        {
-            id: 'wing-1',
-            type: 'polygon',
-            position: { x: 100, y: 200 },
-            dimensions: { w: 100, h: 40 },
-            points: wingPoints,                  // Points générés par NacaHelper
-            properties: { isObstacle: 1 }
-        }
-    ],
-    params: {},
-    mode: 'cpu'
-};
-```
-
-### 3. Instanciation et Exécution
-Utilisez la factory pour démarrer la machine.
-
-```typescript
 const factory = new HypercubeNeoFactory();
-const neo = await factory.instantiate(config, aeroDescriptor);
-
-// Dans votre boucle de rendu
-async function loop() {
-    await neo.step(t); // Calculer t+1
-    requestAnimationFrame(loop);
-}
+const engine = await factory.build(config, descriptor); // Auto-detects CPU/GPU mode
+await engine.step(); // Execute one physics frame
 ```
 
----
-
-## 🧪 Validation & Tests
-
-Pour s'assurer que vos modifications ne cassent rien, lancez les tests de fidélité :
-
-```bash
-npm test hypercube-neo/tests/fidelity.test.ts
-```
-
-- **Vert** : Votre moteur est mathématiquement identique à la référence.
-- **Rouge** : Divergence numérique détectée (vérifiez vos indices ou groupements algébriques).
+## 🌪️ Showcase: Aerodynamics
+Check the [Aero Showcase Guide](../docs/neo/showcase-aero.md) for a deep dive into parameterizing fluid dynamics.
 
 ---
-
-## 🚀 Prochaines Étapes
-- [ ] **Multi-Worker Dispatcher** : Parallélisation réelle des chunks sur différents threads CPU.
-- [ ] **WebGPU Backend** : Activation des kernels WGSL pour une performance massive.
-- [ ] **SDF Interpolation** : Anti-aliasing des objets pour des contours parfaitement lisses.
+*Hypercube Neo is part of the MonOs Cognitive Copilot ecosystem.*

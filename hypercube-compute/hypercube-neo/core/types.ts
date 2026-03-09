@@ -196,6 +196,36 @@ export interface HypercubeConfig {
     workers?: number;
 }
 
+
+/**
+ * Defines the semantic role of each data face.
+ */
+export interface EngineSchema {
+    faces: Array<{
+        index: number;
+        label: string;
+        isSynchronized?: boolean;
+        isReadOnly?: boolean;
+    }>;
+}
+
+/**
+ * Defines how the engine should be rendered visually.
+ */
+export interface VisualProfile {
+    /** ID of a predefined style in the VisualRegistry (optional) */
+    styleId?: string;
+    layers?: Array<{
+        faceIndex?: number; // Physical index
+        faceLabel?: string; // Semantic label (preferred)
+        role: 'primary' | 'secondary' | 'obstacle' | 'vorticity' | 'heat' | 'binary';
+        colormap?: 'grayscale' | 'heatmap' | 'ocean' | 'arctic' | 'vorticity';
+        range?: [number, number];
+        alpha?: number;
+    }>;
+    defaultMode?: 'topdown' | 'isometric' | 'isovolume' | '2.5d';
+}
+
 /**
  * A Self-contained Manifest (V4) defining both the engine and the configuration.
  * This is the Single Source of Truth for a simulation "Case".
@@ -206,4 +236,5 @@ export interface HypercubeManifest {
     version: string;
     engine: EngineDescriptor;
     config: HypercubeConfig;
+    visualProfile?: VisualProfile;
 }

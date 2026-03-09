@@ -1,6 +1,6 @@
 import { IMasterBuffer, IPhysicalChunk, IVirtualGrid } from './GridAbstractions';
 import { DataContract } from './DataContract';
-import { HypercubeGPUContext } from '../../src/core/gpu/HypercubeGPUContext';
+import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
 
 /**
  * The MasterBuffer is the physical memory anchor for Hypercube Neo.

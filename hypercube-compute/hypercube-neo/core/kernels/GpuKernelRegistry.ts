@@ -1,4 +1,4 @@
-import { HypercubeGPUContext } from '../../src/core/gpu/HypercubeGPUContext';
+import { HypercubeGPUContext } from '../gpu/HypercubeGPUContext';
 
 /**
  * Registry for WebGPU compute kernels in Neo.

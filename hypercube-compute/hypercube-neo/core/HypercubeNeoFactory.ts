@@ -5,7 +5,7 @@ import { VirtualGrid } from './VirtualGrid';
 import { MasterBuffer } from './MasterBuffer';
 import { NeoEngineProxy } from './NeoEngineProxy';
 import { IDispatcher } from './IDispatcher';
-import { HypercubeGPUContext } from '../../src/core/gpu/HypercubeGPUContext';
+import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
 import { ObjectRasterizer } from './ObjectRasterizer';
 import { BoundarySynchronizer } from './BoundarySynchronizer';
 import { ParityManager } from './ParityManager';

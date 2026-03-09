@@ -1,70 +1,69 @@
-# Showcase Guide: Aerodynamics LBM (v1)
+# 🌪️ Aerodynamics Showcase Guide (Neo Edition)
 
-This guide explains how to parameterize and tweak the **Aerodynamics-Fidelity** engine used in the current showcase. This engine implements a Lattice Boltzmann (LBM) D2Q9 solver with smoke advection and vorticity calculation.
+Welcome to the Hypercube Neo Aerodynamics showcase. This guide is designed to help you understand how to customize your fluid simulation, even if you are not a physics expert.
 
-## 1. Physical Parameters (`engine.rules`)
+## 📖 Glossary of Terms
 
-The core physics is controlled by the `params` object within the rule of type `lbm-aero-fidelity-v1`.
+To master the simulation, you should understand these 4 key concepts:
 
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `omega` | `number` | `1.75` | **Relaxation Frequency**. Controls viscosity. <br> - High (1.9+): Low viscosity (Turbulent, but can diverge). <br> - Low (1.0): High viscosity (Syrupy/Stable). |
-| `inflowUx` | `number` | `0.15` | **Wind Speed (X)**. Horizontal velocity of the tunnel. |
-| `inflowUy` | `number` | `0.0` | **Wind Speed (Y)**. Vertical velocity (for cross-winds). |
-
-### Example: High-Speed Low-Viscosity Setup
-```json
-"rules": [{
-  "type": "lbm-aero-fidelity-v1",
-  "params": {
-    "omega": 1.9,
-    "inflowUx": 0.22
-  }
-}]
-```
+1.  **LBM (Lattice Boltzmann Method)**: The "engine" we use. Instead of complex math for every drop of water, it treats the fluid as a collection of particles moving on a grid. It's very fast and perfect for GPUs.
+2.  **Omega (Ω)**: This represents the **Relaxation Frequency**. In simple terms: **Viscosity (Thickness)**.
+    -   *High Omega (1.9)*: Water or Air (Thin, fast, creates lots of swirls/vorticity).
+    -   *Low Omega (1.0)*: Honey or Oil (Thick, slow, very stable).
+3.  **Vorticity**: A measure of the "swirliness" or rotation in the fluid. It's what creates those beautiful red turbulent wakes behind obstacles.
+4.  **Advection**: The process of "carrying" something (like smoke) along with the wind.
 
 ---
 
-## 2. Face Dictionary
+## ⚙️ Tweaking the Physics (`engine.rules`)
 
-These are the memory layers you can read or write to in this engine.
+Find the `lbm-aero-fidelity-v1` rule in your manifest to change the behavior of the wind.
 
-| Face | Name | Type | Usage |
-| :--- | :--- | :--- | :--- |
-| `f0`-`f8` | Populations | `scalar`| The raw LBM directions. Internal use only. |
-| `obstacles` | Obstacles | `mask` | **1.0 = Wall**. Fluid flows around these. |
-| `vx`, `vy` | Velocity | `scalar`| Computed horizontal and vertical speeds. |
-| `vorticity` | Vorticity | `scalar`| Rotation/Turbulence intensity (for rendering). |
-| `smoke` | Smoke | `scalar`| Tracer density (Visual only). |
+| Parameter | Impact on Simulation | Recommended Range |
+| :--- | :--- | :--- |
+| `omega` | Controls how "chaotic" the air is. | `1.0` (Stable) to `1.95` (Turbulent) |
+| `inflowUx` | The speed of the wind from left to right. | `0.05` (Breeze) to `0.25` (Hurricane) |
+
+### 💡 Pro Tip: Instability
+If you set `omega` too high (above 1.95) and `inflowUx` too fast, the simulation might "explode" (values become infinite). If the screen turns bright red or white, lower the `omega`!
 
 ---
 
-## 3. Configuring Objects
+## 🎨 Changing the Visuals
 
-You can add any number of objects to the `config.objects` array.
+The `visualProfile` section defines what you see on the screen.
 
-### Adding a Custom Obstacle
-To add a new wall, set its `properties` to `{"obstacles": 1.0}`.
+-   **Arctic Palette**: Designed for Aero. Smoke is white/blue, and Vorticity (turbulence) is represented in varying shades of red.
+-   **Layers**:
+    -   `Obstacles`: The solid objects you've placed.
+    -   `Smoke`: The tracer that shows where the air is moving.
+    -   `Vorticity`: The heat-map of turbulence.
 
+---
+
+## 🧱 Building Your Scenario (`config.objects`)
+
+You can drag and drop objects or define them in the manifest:
+
+### Example: A Solid Pillar
 ```json
 {
-  "id": "new_pillar",
+  "id": "main_pillar",
   "type": "circle",
-  "position": { "x": 50, "y": 256 },
-  "dimensions": { "w": 20, "h": 20 },
+  "position": { "x": 100, "y": 256 },
+  "dimensions": { "w": 30, "h": 30 },
   "properties": { "obstacles": 1.0 }
 }
 ```
 
-### Adding a Smoke Source
-To make an object emit smoke (without being a wall), use `{"smoke": 1.0}`.
-
+### Example: A Smoke Source
+If you want to see the wind flow, place a rectangle at the start of the tunnel:
 ```json
 {
-  "id": "smoke_generator",
+  "id": "emitter",
   "type": "rect",
-  "position": { "x": 10, "y": 256 },
-  "dimensions": { "w": 5, "h": 50 },
+  "position": { "x": 5, "y": 256 },
+  "dimensions": { "w": 2, "h": 100 },
   "properties": { "smoke": 1.0 },
   "rasterMode": "add"
 }
@@ -72,11 +71,8 @@ To make an object emit smoke (without being a wall), use `{"smoke": 1.0}`.
 
 ---
 
-## 4. Performance Tuning
+## 🚀 Performance
+-   **CPU Mode**: High resolution is limited by your processor count. Use `4x2` chunks for a quad-core CPU.
+-   **GPU Mode**: Can handle massive resolutions (2048x1024) at 60 FPS on modern hardware.
 
-In the `config` section:
-- **Chunks**: Increase `x` and `y` to leverage more CPU cores (e.g., `4x2` for 8 chunks).
-- **Resolution**: Adjust `nx` and `ny`. High values (1024+) require a powerful GPU if `mode: "gpu"` is used.
-
-> [!TIP]
-> Always keep your dimensions as multiples of 16 for optimal memory alignment in the dispatcher.
+Enjoy exploring the world of fluid dynamics with Hypercube Neo!

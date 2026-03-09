@@ -1,7 +1,7 @@
 import { IDispatcher } from './IDispatcher';
 import { IVirtualGrid, IMasterBuffer } from './GridAbstractions';
 import { ParityManager } from './ParityManager';
-import { HypercubeGPUContext } from '../../src/core/gpu/HypercubeGPUContext';
+import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
 import { DataContract } from './DataContract';
 import { MasterBuffer } from './MasterBuffer';
 import { GpuKernelRegistry } from './kernels/GpuKernelRegistry';

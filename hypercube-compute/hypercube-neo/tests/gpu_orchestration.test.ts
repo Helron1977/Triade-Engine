@@ -5,7 +5,7 @@ import { ParityManager } from '../core/ParityManager';
 import { GpuDispatcher } from '../core/GpuDispatcher';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 import { DataContract } from '../core/DataContract';
-import { HypercubeGPUContext } from '../../src/core/gpu/HypercubeGPUContext';
+import { HypercubeGPUContext } from '../core/gpu/HypercubeGPUContext';
 
 // Mock Global WebGPU Enums for NodeJS test environment
 if (typeof (global as any).GPUBufferUsage === 'undefined') {

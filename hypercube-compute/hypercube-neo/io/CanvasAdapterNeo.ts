@@ -1,5 +1,5 @@
 import { NeoEngineProxy } from '../core/NeoEngineProxy';
-import { VisualRegistry } from '../../src/io/VisualRegistry';
+import { VisualRegistry } from './VisualRegistry';
 
 export interface RenderOptions {
     faceIndex: number;
@@ -57,7 +57,7 @@ export class CanvasAdapterNeo {
         // Iterate through chunks and "tile" them into the global imageData
         for (let cy = 0; cy < nChunksY; cy++) {
             for (let cx = 0; cx < nChunksX; cx++) {
-                const chunk = neo.vGrid.chunks.find(c => c.x === cx && c.y === cy);
+                const chunk = neo.vGrid.chunks.find((c: any) => c.x === cx && c.y === cy);
                 if (!chunk) continue;
 
                 const views = neo.mBuffer.getChunkViews(chunk.id);

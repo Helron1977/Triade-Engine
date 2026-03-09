@@ -1,7 +1,7 @@
 import { IBoundarySynchronizer } from './GridAbstractions';
 import { IVirtualGrid, IMasterBuffer } from './GridAbstractions';
 import { ParityManager } from './ParityManager';
-import { HypercubeGPUContext } from '../../src/core/gpu/HypercubeGPUContext';
+import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
 import { MasterBuffer } from './MasterBuffer';
 import { DataContract } from './DataContract';
 
