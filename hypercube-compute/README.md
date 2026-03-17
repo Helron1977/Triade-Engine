@@ -117,7 +117,7 @@ const heatmap = grid.cubes[0][0].faces[2]; // Float32Array ready for rendering!
 ### 🌊 OceanEngine – Shallow Water + Plankton Dynamics (D2Q9 LBM)
 Simulation océanique simplifiée : courants, tourbillons, forcing interactif (vortex souris), + croissance/diffusion plancton.
 
-**Version V5.4 "Zero-Stall"** :
+**Version V5 "Zero-Stall"** :
 - **Optimisation GPU** : Passage intégral en WGSL avec gestion de barrières mémoire.
 - **Synchronisation VRAM-to-VRAM** : Les échanges de frontières entre chunks se font directement sur le GPU (`copyBufferToBuffer`), éliminant tout readback CPU pendant la simulation.
 - **Masse Conservée** : Algorithme validé sur grilles multi-chunks avec conservation parfaite à < 0.1%.
@@ -281,7 +281,7 @@ canvas.onmousemove = (e) => {
 
 ---
 
-### 🚀 Hardware Acceleration (WebGPU V5.4)
+### 🚀 Hardware Acceleration (WebGPU V5)
 
 Hypercube auto-détecte le support, mais pour un maximum de performance :
 

@@ -16,7 +16,8 @@ Hypercube Neo is a high-performance **Cartesian Spatial Computing Engine**. It l
 - **Hybrid Execution**: 
   - **CPU (Multi-Threaded)**: Optimized LBM and Stencil kernels for modern processors via Web Workers and SharedArrayBuffers.
   - **GPU (WebGPU)**: Direct VRAM-to-VRAM computation with compute shaders, eliminating CPU-GPU bottlenecks.
-- **Zero-Copy Memory**: MasterBuffer architecture ensures efficient data sharing between chunks.
+- **Unified Memory Bridge**: Hardware-agnostic memory orchestration (`IBufferBridge`) handles CPU/GPU synchronization seamlessly.
+- **Zero-Copy Memory**: MasterBuffer architecture ensures efficient data sharing between chunks with 256-byte alignment security.
 - **Topological Slicing**: Logical multi-chunk partitioning for large-scale distributed-like execution.
 
 ## 📁 Repository Structure

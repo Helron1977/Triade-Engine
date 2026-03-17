@@ -1,6 +1,6 @@
 # LBM Ocean 2.5D (Showcase 02)
 
-Ce showcase démontre les capacités multi-physiques du moteur **Hypercube Neo V4** en croisant deux domaines simultanément :
+Ce showcase démontre les capacités multi-physiques du moteur **Hypercube Neo** en croisant deux domaines simultanément :
 1. **La Dynamique des Fluides (LBM D2Q9)** pour simuler la surface de l'eau et sa propagation d'ondes (Shallow Water Equation).
 2. **L'Advection-Diffusion** pour simuler la propagation de matière biologique ou thermique *portée* par le courant d'eau.
 
@@ -98,9 +98,7 @@ Créer un "Splash" consiste à poser explicitement une zone (cercle) où la haut
 
 ---
 
-## 🔀 Multithreading & Scalabilité (Neo V4)
-
-Cet océan CPU tire parti du nouveau moteur **Hypercube Neo V4**. Si vous indiquez `"chunks": { "x": 2, "y": 2 }` et `"executionMode": "parallel"`, l'océan de `512x512` sera découpé en 4 mers de `128x128`.
+Cet océan CPU tire parti du moteur **Hypercube Neo**. Si vous indiquez `"chunks": { "x": 2, "y": 2 }` et `"executionMode": "parallel"`, l'océan de `512x512` sera découpé en 4 mers de `128x128`.
 
 Hypercube va instancier **4 Web Workers** dédiés en parallèle. Le `BoundarySynchronizer` injectera nativement les populations `f` frontalières d'un serveur à l'autre sans que le noyau mathématique `NeoOceanKernel` ne s'en aperçoive.
 Ceci vous permet de simuler des océans LBM à une vitesse impossible pour le fil principal du navigateur Javascript.
@@ -143,8 +141,8 @@ Pour les développeurs souhaitant intégrer Hypercube dans un jeu vidéo, vous p
 // On récupère les données d'une image de 512x512
 const obstaclesMap = myImageLoader.getBuffer(); 
 
-// On "peint" la topologie directement dans le MasterBuffer du GPU
-engine.mBuffer.setFaceData('chunk_0', 'obstacles', obstaclesMap);
+// On "peint" la topologie directement dans le MasterBuffer via le Bridge
+engine.bridge.setFaceData('chunk_0', 'obstacles', obstaclesMap);
 ```
 
 **Applications :**
