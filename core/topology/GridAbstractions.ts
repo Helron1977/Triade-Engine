@@ -1,5 +1,5 @@
 import { BoundaryRole, GridBoundaries, Dimension3D, HypercubeConfig, VirtualObject } from '../types';
-import { IBufferBridge } from '../IBufferBridge';
+import { IBufferBridge } from '../memory/IBufferBridge';
 
 /**
  * Descriptor for a joint between two chunks or a world boundary.

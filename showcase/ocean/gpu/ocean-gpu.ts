@@ -1,4 +1,4 @@
-import { HypercubeNeoFactory } from '../../core/HypercubeNeoFactory';
+import { HypercubeNeoFactory } from '../../../../core/HypercubeNeoFactory';
 import { WebGpuIsoRendererNeo } from '../../io/WebGpuIsoRendererNeo';
 import { BenchmarkHUD } from '../../io/BenchmarkHUD';
 

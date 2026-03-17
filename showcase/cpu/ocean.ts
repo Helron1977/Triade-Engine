@@ -1,4 +1,4 @@
-import { HypercubeNeoFactory } from '../../core/HypercubeNeoFactory';
+import { HypercubeNeoFactory } from '../../../../core/HypercubeNeoFactory';
 import { IsoRendererNeo } from '../../io/IsoRendererNeo';
 import { BenchmarkHUD } from '../../io/BenchmarkHUD';
 

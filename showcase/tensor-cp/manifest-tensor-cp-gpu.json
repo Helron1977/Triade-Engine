@@ -1,31 +1,47 @@
 {
   "name": "Tensor CP/ALS Explorer (GPU)",
-  "type": "tensor-cp",
   "version": "1.0",
-  "dimensions": { "nx": 5, "ny": 5, "nz": 3 },
-  "params": {
-    "rank": 3,
-    "maxIterations": 30,
-    "tolerance": 0.0001,
-    "regularization": 0.001,
-    "randomSeed": 42
+  "engine": {
+    "name": "tensor-cp",
+    "version": "1.0",
+    "faces": [
+      { "name": "mode_a", "type": "factor", "isSynchronized": true },
+      { "name": "mode_b", "type": "factor", "isSynchronized": true },
+      { "name": "mode_c", "type": "factor", "isSynchronized": true },
+      { "name": "target", "type": "tensor", "isSynchronized": true }
+    ],
+    "parameters": {
+      "rank": { "name": "Rank", "type": "number", "default": 3 },
+      "maxIterations": { "name": "Max Iterations", "type": "number", "default": 30 },
+      "tolerance": { "name": "Tolerance", "type": "number", "default": 0.0001 },
+      "regularization": { "name": "Regularization", "type": "number", "default": 0.001 }
+    },
+    "rules": [
+      {
+        "type": "neo-tensor-cp-v1",
+        "source": "target",
+        "params": {
+          "rank": 3,
+          "regularization": 0.001
+        }
+      }
+    ],
+    "requirements": {
+      "ghostCells": 0,
+      "pingPong": false
+    }
   },
-  "backend": "gpu",
-  "faces": [
-    { "name": "mode_a", "isPingPong": false, "isSynchronized": true },
-    { "name": "mode_b", "isPingPong": false, "isSynchronized": true },
-    { "name": "mode_c", "isPingPong": false, "isSynchronized": true },
-    { "name": "target", "isPingPong": false, "isSynchronized": true }
-  ],
-  "visualization": {
-    "showFactors": true,
-    "showErrorCurve": true,
-    "showReconstruction": true
-  },
-  "input": {
-    "type": "csv",
-    "path": "assets/tensor-sample.csv",
-    "mode": "unfold",
-    "delimiter": ","
+  "config": {
+    "dimensions": { "nx": 5, "ny": 5, "nz": 3 },
+    "chunks": { "x": 1, "y": 1 },
+    "boundaries": {},
+    "mode": "gpu",
+    "engine": "tensor-cp",
+    "params": {
+      "rank": 3,
+      "maxIterations": 30,
+      "tolerance": 0.0001,
+      "regularization": 0.001
+    }
   }
 }
