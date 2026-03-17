@@ -83,14 +83,16 @@ export class ParallelDispatcher implements IDispatcher {
         if (!(this as any)._staticBatchReady) {
             this.initMetadata(descriptor);
             
-            let maxNx = 0, maxNy = 0;
+            let maxNx = 0, maxNy = 0, maxNz = 0;
             for (const chunk of this.vGrid.chunks) {
                 maxNx = Math.max(maxNx, chunk.localDimensions.nx);
                 maxNy = Math.max(maxNy, chunk.localDimensions.ny);
+                maxNz = Math.max(maxNz, chunk.localDimensions.nz || 1);
             }
             const padding = descriptor.requirements.ghostCells;
             const pNx = maxNx + 2 * padding;
             const pNy = maxNy + 2 * padding;
+            const pNz = maxNz; // 3D slices usually not padded in Z for simple tensors
 
             const workerTasksMap = new Map<Worker, any[]>();
             for (const w of this.workers) workerTasksMap.set(w, []);

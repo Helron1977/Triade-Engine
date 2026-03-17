@@ -36,10 +36,11 @@ export class NumericalDispatcher implements IDispatcher {
         }
 
         // 2. Pre-compute uniform parameters
-        let maxNx = 0, maxNy = 0;
+        let maxNx = 0, maxNy = 0, maxNz = 0;
         for (const chunk of this.vGrid.chunks) {
             maxNx = Math.max(maxNx, chunk.localDimensions.nx);
             maxNy = Math.max(maxNy, chunk.localDimensions.ny);
+            maxNz = Math.max(maxNz, chunk.localDimensions.nz || 1);
         }
 
         const padding = descriptor.requirements.ghostCells;
@@ -76,6 +77,7 @@ export class NumericalDispatcher implements IDispatcher {
             // 4. Compute Context Execution using pooled object
             this.pooledContext.nx = vChunk.localDimensions.nx;
             this.pooledContext.ny = vChunk.localDimensions.ny;
+            this.pooledContext.nz = vChunk.localDimensions.nz || 1;
             this.pooledContext.chunk = vChunk;
 
             for (const scheme of descriptor.rules) {

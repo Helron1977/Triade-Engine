@@ -1,17 +1,26 @@
 # User Specific Rules - Antigravity AI
 
-## Environment & Shell (Windows PowerShell)
-- **NEVER** use `&&` to chain commands. This operator is not natively supported in many versions of PowerShell or causes issues in the current execution environment.
-- **ALWAYS** use `;` to separate commands (e.g., `git add . ; git commit -m "msg"`).
+## 🧠 Cognitive Workflow
+- **Recursive Analysis**: Always analyze the repository recursively and stay up-to-date with the latest structure, code, docs, and manifests.
+- **Honest Critique**: Provide direct and constructive feedback—highlighting strengths but never hiding real structural or architectural flaws.
+- **Manifest-First Philosophy**: Propose solutions that are clean, elegant, and consistent with the core principles: manifest-first, zero-allocation, maximum factorization, and reuse of the `HypercubeNeoFactory`.
+- **Excellence Standards**: Prioritize clarity, maintainability, and the elimination of duplication (especially between CPU and GPU modes).
+- **Showcase & UX**: Ensure a premium user experience with beautiful `index.html` dashboards and crystal-clear documentation.
 
-## Performance & Compute (Hypercube Engine)
-- **SharedArrayBuffer Warning**: GitHub Pages and most standard web hosts do not serve the required `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` headers by default. 
-- **Consequence**: `SharedArrayBuffer` will be unavailable on these platforms, leading to a fallback to standard `ArrayBuffer`.
-- **Optimization**: Ensure engines are robust to CPU sequential fallback when multi-threading is unavailable.
+## 💻 Coding Standards
+- **Clean Code**: Provide well-commented, professional code.
+- **Structure**: Always include the corresponding manifest and the proposed folder structure when delivering code.
+- **Architectural Evolution**: Proactively suggest improvements to the separation of core, kernels, and showcases.
+- **Tone**: Professional, precise, motivating, and "no bullshit".
 
-## Multi-Chunk Sync & Artifacts
-- **LBM Boundaries**: Always respect the 1-pixel ghost cell margin. Loops must iterate from `1` to `N-2`.
-- **getSyncFaces**: Ensure all engines implement `getSyncFaces` to synchronize microscopic populations (faces 0-8) and macro variables (faces 18-20).
+## 🛠️ Environment & Shell (Windows PowerShell)
+- **NEVER** use `&&` to chain commands. Use `;` instead.
+- **Git Persistence**: Always follow through with `git add .`, `commit`, and `push` after major changes.
 
-## CI/CD & Deployment
-- **Documentation Demos**: Whenever you modify an example demo that is listed in the documentation (e.g. `01` to `07`), you **MUST** recompile it (`npm run build`) and correctly copy/deploy its built assets into the root `/docs/` folder of the repository. If you skip this step, the online GitHub Pages links will point to stale, broken, or older versions of the examples.
+## 🌪️ Performance & Compute (Hypercube Engine)
+- **SharedArrayBuffer Warning**: Ensure robust sequential fallback when COOP/COEP headers are missing.
+- **LBM Boundaries**: Always respect the 1-pixel ghost cell margin (loops from `1` to `N-2`).
+- **Sync Integrity**: All engines must implement `getSyncFaces` for correct microscopic/macroscopic synchronization.
+
+## 📦 CI/CD & Deployment
+- **Documentation Demos**: Recompile demos (`npm run build`) and sync assets to `/docs/` when modifying examples to keep GitHub Pages live.

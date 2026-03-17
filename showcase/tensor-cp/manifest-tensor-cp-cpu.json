@@ -1,0 +1,31 @@
+{
+  "name": "Tensor CP/ALS Explorer (CPU)",
+  "type": "tensor-cp",
+  "version": "1.0",
+  "dimensions": { "nx": 5, "ny": 5, "nz": 3 },
+  "params": {
+    "rank": 3,
+    "maxIterations": 30,
+    "tolerance": 0.0001,
+    "regularization": 0.001,
+    "randomSeed": 42
+  },
+  "backend": "cpu",
+  "faces": [
+    { "name": "mode_a", "isPingPong": false, "isSynchronized": true },
+    { "name": "mode_b", "isPingPong": false, "isSynchronized": true },
+    { "name": "mode_c", "isPingPong": false, "isSynchronized": true },
+    { "name": "target", "isPingPong": false, "isSynchronized": true }
+  ],
+  "visualization": {
+    "showFactors": true,
+    "showErrorCurve": true,
+    "showReconstruction": true
+  },
+  "input": {
+    "type": "csv",
+    "path": "assets/tensor-sample.csv",
+    "mode": "unfold",
+    "delimiter": ","
+  }
+}

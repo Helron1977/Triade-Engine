@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypercube Neo - Tensor-CP ALS Explorer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --accent: #38bdf8;
+            --surface: #1e293b;
+            --text: #f8fafc;
+        }
+        body {
+            background: var(--bg-dark);
+            color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            padding: 2rem;
+            text-align: center;
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 2rem;
+            padding: 0 1rem;
+        }
+        .panel {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .controls label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        .controls input, .controls select {
+            width: 100%;
+            padding: 0.75rem;
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: white;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .btn {
+            background: var(--accent);
+            color: #0f172a;
+            border: none;
+            padding: 1rem;
+            width: 100%;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 1rem;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(56, 189, 248, 0.4);
+        }
+        .secondary {
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+        .visuals canvas {
+            background: #0f172a;
+            border-radius: 1rem;
+            width: 100% !important;
+            height: 400px !important;
+        }
+        #stats {
+            margin-top: 1rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #10b981;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Tensor-CP ALS Explorer 🧮</h1>
+        <p>Decomposition of 3D Tensors via Hypercube Neo Engine</p>
+    </header>
+
+    <div class="container">
+        <aside class="panel controls">
+            <label>Input Data</label>
+            <button class="btn secondary" id="loadSample">Load Sample (5x5x3)</button>
+            <input type="file" id="csvFile" style="display:none">
+            <button class="btn secondary" onclick="document.getElementById('csvFile').click()">Upload CSV</button>
+
+            <label>Decomposition Rank (K)</label>
+            <input type="range" min="1" max="10" value="3" id="rankRange">
+            <div style="text-align:right; margin-top:-1rem">Rank: <span id="rankVal">3</span></div>
+
+            <label>Backend Authority</label>
+            <select id="backendChoice">
+                <option value="cpu">Multi-threaded CPU</option>
+                <option value="gpu">WebGPU Tensor Fabric</option>
+            </select>
+
+            <button class="btn" id="runBtn">Start Decomposition</button>
+            <div id="stats">Ready...</div>
+        </aside>
+
+        <main class="panel visuals">
+            <h3>Reconstruction Error (MSE)</h3>
+            <canvas id="errorChart"></canvas>
+            
+            <h3>Factor Matrices Preview</h3>
+            <div id="factorsGrid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <!-- Tables will go here -->
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        // Connection to Hypercube Neo logic
+        document.getElementById('rankRange').oninput = (e) => {
+            document.getElementById('rankVal').innerText = e.target.value;
+        };
+
+        const ctx = document.getElementById('errorChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'MSE Error',
+                    borderColor: '#38bdf8',
+                    data: [],
+                    fill: false,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { type: 'logarithmic', beginAtZero: false }
+                }
+            }
+        });
+
+        document.getElementById('runBtn').onclick = () => {
+            const backend = document.getElementById('backendChoice').value;
+            window.location.href = `./${backend}/tensor-cp.html?rank=${document.getElementById('rankRange').value}&backend=${backend}`;
+        };
+    </script>
+</body>
+</html>

@@ -11,6 +11,7 @@ export interface ComputeContext {
     /** Local grid dimensions of the current chunk (without padding) */
     readonly nx: number;
     readonly ny: number;
+    readonly nz: number;
     
     /** Memory stride (physical width including padding) */
     readonly pNx: number;

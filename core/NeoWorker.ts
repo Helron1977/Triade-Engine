@@ -54,6 +54,7 @@ self.onmessage = async (e: MessageEvent) => {
                 // 3. Update pooled context
                 pooledContext.nx = chunk.localDimensions.nx;
                 pooledContext.ny = chunk.localDimensions.ny;
+                pooledContext.nz = chunk.localDimensions.nz || 1;
                 pooledContext.pNx = contextProps.pNx;
                 pooledContext.pNy = contextProps.pNy;
                 pooledContext.padding = contextProps.padding;
