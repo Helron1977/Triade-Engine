@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { VirtualGrid } from '../core/topology/VirtualGrid';
-import { MasterBuffer } from '../core/MasterBuffer';
-import { CpuBufferBridge } from '../core/CpuBufferBridge';
-import { BoundarySynchronizer } from '../core/topology/BoundarySynchronizer';
+import { MasterBuffer } from '../core/memory/MasterBuffer';
+import { CpuBufferBridge } from '../core/memory/CpuBufferBridge';
+import { CpuBoundarySynchronizer } from '../core/topology/CpuBoundarySynchronizer';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 
 describe('Hypercube Neo: Boundary Synchronization', () => {
@@ -27,7 +27,7 @@ describe('Hypercube Neo: Boundary Synchronization', () => {
 
     const vGrid = new VirtualGrid(config, lbmDescriptor);
     const mBuffer = new MasterBuffer(vGrid);
-    const synchronizer = new BoundarySynchronizer();
+    const synchronizer = new CpuBoundarySynchronizer();
 
     it('should transfer data across direct faces (Left/Right)', () => {
         const bridge = new CpuBufferBridge(mBuffer);
@@ -95,7 +95,7 @@ describe('Hypercube Neo: Periodic Boundaries', () => {
 
     const vGrid = new VirtualGrid(config, lbmDescriptor);
     const mBuffer = new MasterBuffer(vGrid);
-    const synchronizer = new BoundarySynchronizer();
+    const synchronizer = new CpuBoundarySynchronizer();
 
     it('should seamlessly wrap left/right world edges', () => {
         const bridge = new CpuBufferBridge(mBuffer);

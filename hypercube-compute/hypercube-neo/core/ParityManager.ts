@@ -5,9 +5,24 @@ import { DataContract } from './DataContract';
  * Ensures that engines always know which buffer to read from and which to write to.
  */
 export class ParityManager {
+    private faceCache: Map<string, { baseIdx: number; isPingPong: boolean }> = new Map();
     private tick: number = 0;
 
-    constructor(private dataContract: DataContract) { }
+    constructor(private dataContract: DataContract) {
+        this.cacheMappings();
+    }
+
+    private cacheMappings(): void {
+        const mappings = this.dataContract.getFaceMappings();
+        let currentBaseIdx = 0;
+        for (const mapping of mappings) {
+            this.faceCache.set(mapping.name, {
+                baseIdx: currentBaseIdx,
+                isPingPong: mapping.isPingPong
+            });
+            currentBaseIdx += mapping.isPingPong ? 2 : 1;
+        }
+    }
 
     /**
      * Increments the simulation tick and swaps parity.
@@ -21,22 +36,14 @@ export class ParityManager {
      * @returns { read: number, write: number } Indices into the chunk's physical faces array.
      */
     public getFaceIndices(faceName: string): { read: number; write: number } {
-        const mappings = this.dataContract.getFaceMappings();
-        const faceIdx = mappings.findIndex(m => m.name === faceName);
+        const cached = this.faceCache.get(faceName);
 
-        if (faceIdx === -1) {
+        if (!cached) {
             throw new Error(`ParityManager: Face "${faceName}" not found in contract.`);
         }
 
-        // Calculate absolute start index in the faces array
-        let baseIdx = 0;
-        for (let i = 0; i < faceIdx; i++) {
-            baseIdx += mappings[i].isPingPong ? 2 : 1;
-        }
-
-        const mapping = mappings[faceIdx];
-        if (!mapping.isPingPong) {
-            return { read: baseIdx, write: baseIdx };
+        if (!cached.isPingPong) {
+            return { read: cached.baseIdx, write: cached.baseIdx };
         }
 
         // Swapping logic: 
@@ -44,8 +51,8 @@ export class ParityManager {
         // Tick 1: Read B (1), Write A (0)
         const isOdd = this.tick % 2 === 1;
         return {
-            read: baseIdx + (isOdd ? 1 : 0),
-            write: baseIdx + (isOdd ? 0 : 1)
+            read: cached.baseIdx + (isOdd ? 1 : 0),
+            write: cached.baseIdx + (isOdd ? 0 : 1)
         };
     }
 

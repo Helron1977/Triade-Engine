@@ -1,13 +1,13 @@
 import { IBoundarySynchronizer, IVirtualGrid, VirtualChunk } from './GridAbstractions';
-import { IBufferBridge } from '../IBufferBridge';
+import { IBufferBridge } from '../memory/IBufferBridge';
 import { DataContract } from '../DataContract';
 import { ParityManager } from '../ParityManager';
 
 /**
- * Handles high-performance ghost cell synchronization.
+ * Handles high-performance ghost cell synchronization for CPU mode.
  * Focuses on 'Joint' boundaries, including corner/diagonal transfers.
  */
-export class BoundarySynchronizer implements IBoundarySynchronizer {
+export class CpuBoundarySynchronizer implements IBoundarySynchronizer {
 
     syncAll(vGrid: IVirtualGrid, bridge: IBufferBridge, parityManager?: ParityManager, mode: 'read' | 'write' = 'write'): void {
         const grid = vGrid as any;

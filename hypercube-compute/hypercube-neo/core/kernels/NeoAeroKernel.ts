@@ -40,6 +40,7 @@ export class NeoAeroKernel implements IKernel {
         // Resolve views via Binder (Nuclear Refactor Priority 2)
         const bound = KernelBinder.bind(this, scheme, views, indices);
 
+        // ... populations ... (keep existing bindings)
         const f0_in = bound.source.read;
         const f0_out = bound.destination.write;
         const obstacles = bound.obstacles!; // Aero requires obstacles
@@ -58,8 +59,23 @@ export class NeoAeroKernel implements IKernel {
         const curl_out = bound.auxiliary[10]!.write;
         const smoke_in = bound.auxiliary[11]!.read, smoke_out = bound.auxiliary[11]!.write;
 
-        // Resolve topology roles for this chunk
-        const topo = this.topoResolver.resolve(chunk, gridConfig.chunks, gridConfig.boundaries);
+        // Resolve topology roles with caching
+        const vChunkAny = chunk as any;
+        if (!vChunkAny._topoCache) {
+            vChunkAny._topoCache = this.topoResolver.resolve(chunk, gridConfig.chunks, gridConfig.boundaries);
+            
+            // Also pre-calculate worldY0 while we're at it
+            let y0 = 0;
+            const cList = gridConfig.chunksList || gridConfig.vGrid?.chunks;
+            if (cList) {
+                for (const c of cList) {
+                    if (c.x === chunk.x && c.z === chunk.z && c.y < chunk.y) y0 += c.localDimensions.ny;
+                }
+            }
+            vChunkAny._worldY0 = y0;
+        }
+
+        const topo = vChunkAny._topoCache;
         const isLeft = topo.leftRole !== BoundaryRoleID.CONTINUITY;
         const isRight = topo.rightRole !== BoundaryRoleID.CONTINUITY;
         const isTop = topo.topRole !== BoundaryRoleID.CONTINUITY;
@@ -235,19 +251,7 @@ export class NeoAeroKernel implements IKernel {
                 smoke_out[i] = (raw * 0.995 + neighborAvg * 0.005) * 0.9999;
 
                 if (isLeft && topo.leftRole === BoundaryRoleID.INFLOW && px === padding) {
-                    // Global Y for continuous stripes across chunks
-                    let worldY0 = 0;
-                    if (gridConfig.chunksList) { // Use chunksList if available for performance
-                        for (const c of gridConfig.chunksList) {
-                            if (c.x === chunk.x && c.z === chunk.z && c.y < chunk.y) worldY0 += c.localDimensions.ny;
-                        }
-                    } else if (gridConfig.vGrid?.chunks) {
-                         for (const c of gridConfig.vGrid.chunks) {
-                            if (c.x === chunk.x && c.z === chunk.z && c.y < chunk.y) worldY0 += c.localDimensions.ny;
-                        }
-                    }
-                    
-                    const worldY = worldY0 + (py - padding);
+                    const worldY = (vChunkAny._worldY0 || 0) + (py - padding);
                     const pitch = 25; // Matching legacy visual
                     if ((worldY + 2) % pitch <= 2) smoke_out[i] = 1.0;
                 }

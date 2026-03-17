@@ -2,21 +2,21 @@ import { IFactory } from './IFactory';
 import { IBoundarySynchronizer } from './topology/GridAbstractions';
 import { HypercubeConfig, EngineDescriptor, HypercubeManifest } from './types';
 import { VirtualGrid } from './topology/VirtualGrid';
-import { MasterBuffer } from './MasterBuffer';
+import { MasterBuffer } from './memory/MasterBuffer';
 import { NeoEngineProxy } from './NeoEngineProxy';
-import { IDispatcher } from './IDispatcher';
+import { IDispatcher } from './dispatchers/IDispatcher';
 import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
-import { ObjectRasterizer } from './ObjectRasterizer';
-import { BoundarySynchronizer } from './topology/BoundarySynchronizer';
+import { ObjectRasterizer } from './rasterization/ObjectRasterizer';
+import { CpuBoundarySynchronizer } from './topology/CpuBoundarySynchronizer';
 import { ParityManager } from './ParityManager';
 import { KernelRegistry } from './kernels/KernelRegistry';
 import { initializeKernels } from './kernels/KernelInitializer';
 import { initializeGpuKernels } from './kernels/GpuKernelInitializer';
-import { GpuDispatcher } from './GpuDispatcher';
+import { GpuDispatcher } from './dispatchers/GpuDispatcher';
 import { GpuBoundarySynchronizer } from './topology/GpuBoundarySynchronizer';
-import { CpuBufferBridge } from './CpuBufferBridge';
-import { GpuBufferBridge } from './GpuBufferBridge';
-import { IBufferBridge } from './IBufferBridge';
+import { CpuBufferBridge } from './memory/CpuBufferBridge';
+import { GpuBufferBridge } from './memory/GpuBufferBridge';
+import { IBufferBridge } from './memory/IBufferBridge';
 
 // Auto-register default kernels
 initializeKernels();
@@ -105,7 +105,7 @@ export class HypercubeNeoFactory implements IFactory {
     private createSynchronizer(config: HypercubeConfig): IBoundarySynchronizer {
         return config.mode === 'gpu'
             ? new GpuBoundarySynchronizer()
-            : new BoundarySynchronizer();
+            : new CpuBoundarySynchronizer();
     }
 
     /**
@@ -122,11 +122,11 @@ export class HypercubeNeoFactory implements IFactory {
         }
 
         if (config.executionMode === 'parallel') {
-            const { ParallelDispatcher } = await import('./ParallelDispatcher');
+            const { ParallelDispatcher } = await import('./dispatchers/ParallelDispatcher');
             return new ParallelDispatcher(vGrid, bridge, parityManager);
         }
 
-        const { NumericalDispatcher } = await import('./NumericalDispatcher');
+        const { NumericalDispatcher } = await import('./dispatchers/NumericalDispatcher');
         return new NumericalDispatcher(vGrid, bridge, parityManager);
     }
 

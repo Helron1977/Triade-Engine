@@ -1,8 +1,8 @@
-import { IRasterizer, IVirtualGrid, VirtualChunk } from './topology/GridAbstractions';
-import { IBufferBridge } from './IBufferBridge';
-import { VirtualObject, EngineFace, EngineDescriptor } from './types';
-import { DataContract } from './DataContract';
-import { ParityManager } from './ParityManager';
+import { IRasterizer, IVirtualGrid, VirtualChunk } from '../topology/GridAbstractions';
+import { IBufferBridge } from '../memory/IBufferBridge';
+import { VirtualObject, EngineFace, EngineDescriptor } from '../types';
+import { DataContract } from '../DataContract';
+import { ParityManager } from '../ParityManager';
 
 /**
  * High-performance rasterizer for Hypercube Neo.

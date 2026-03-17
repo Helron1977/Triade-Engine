@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { VirtualGrid } from '../core/topology/VirtualGrid';
-import { MasterBuffer } from '../core/MasterBuffer';
+import { MasterBuffer } from '../core/memory/MasterBuffer';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 
 describe('Hypercube Neo: Physical MasterBuffer', () => {

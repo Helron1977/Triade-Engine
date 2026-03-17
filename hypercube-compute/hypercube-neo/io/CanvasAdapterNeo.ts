@@ -54,18 +54,35 @@ export class CanvasAdapterNeo {
         const invRange = 1.0 / (maxV - minV || 1.0);
 
 
-        // Resolve logical face indices → physical slots via parityManager
-        // (same convention as WebGpuRendererNeo: faceIndex is a descriptor.faces index)
         const descriptor = (neo.vGrid as any).dataContract.descriptor;
         const getPhysicalSlot = (logicalIdx: number | undefined): number | undefined => {
             if (logicalIdx === undefined || logicalIdx >= descriptor.faces.length) return undefined;
             const faceName = descriptor.faces[logicalIdx].name;
             return neo.parityManager.getFaceIndices(faceName).read;
         };
+
         const physFaceIdx = getPhysicalSlot(options.faceIndex);
         const physObsIdx  = getPhysicalSlot(options.obstaclesFace);
-        const physVortIdx = getPhysicalSlot(options.vorticityFace); // Keep for compatibility
-        const auxIndices = (options.auxiliaryFaces || []).map(idx => getPhysicalSlot(idx));
+        const physVortIdx = getPhysicalSlot(options.vorticityFace);
+        const auxIndices  = (options.auxiliaryFaces || []).map(idx => getPhysicalSlot(idx));
+
+        const criteria = options.criteria || [];
+        const criteriaPhysIndices = criteria.map(c => getPhysicalSlot(c.faceIndex));
+        
+        const criteriaSDF = options.criteriaSDF || [];
+        const criteriaSDFPhysSets = criteriaSDF.map(c => ({
+            x: getPhysicalSlot(c.xFace),
+            y: getPhysicalSlot(c.yFace)
+        }));
+
+        // 1. Pooled context to avoid 250k+ allocations/frame
+        const coloringCtx: any = {
+            minV, maxV, invRange,
+            vorticityFace: physVortIdx,
+            auxiliaryFaces: auxIndices,
+            options: { ...options }
+        };
+        const colormapFn = ColormapRegistry.get(colormap === 'heatmap' && criteria.length > 0 ? 'heatmap-criteria' : colormap);
 
         // Pre-calculate max dimensions for correct stride logic
         let maxNx = 0;
@@ -78,29 +95,35 @@ export class CanvasAdapterNeo {
         // Iterate through chunks and "tile" them into the global imageData
         for (const chunk of neo.vGrid.chunks) {
             const faces = neo.bridge.getChunkViews(chunk.id);
-            // ... (rest of getting data arrays)
             const data = physFaceIdx !== undefined ? faces[physFaceIdx] : null;
-            const criteria = options.criteria || [];
-            const criteriaFaces = criteria.map(c => {
-                const phys = getPhysicalSlot(c.faceIndex);
-                return phys !== undefined ? faces[phys] : new Float32Array(0);
-            });
-            const criteriaSDF = options.criteriaSDF || [];
-            const criteriaSDFFaces = criteriaSDF.map(c => ({
-                x: getPhysicalSlot(c.xFace) !== undefined ? faces[getPhysicalSlot(c.xFace)!] : new Float32Array(0),
-                y: getPhysicalSlot(c.yFace) !== undefined ? faces[getPhysicalSlot(c.yFace)!] : new Float32Array(0)
-            }));
-            const obsData  = physObsIdx  !== undefined ? faces[physObsIdx]  : null;
-            const vortData = physVortIdx !== undefined ? faces[physVortIdx] : null;
+            const obsData = physObsIdx !== undefined ? faces[physObsIdx] : null;
 
-            // Calculate world offsets by summing preceding chunks
-            let worldXOffset = 0;
-            let worldYOffset = 0;
-            for (const c of neo.vGrid.chunks) {
-                if (c.y === chunk.y && c.z === chunk.z && c.x < chunk.x) worldXOffset += c.localDimensions.nx;
-                if (c.x === chunk.x && c.z === chunk.z && c.y < chunk.y) worldYOffset += c.localDimensions.ny;
+            // Resolve criteria views for this chunk (pre-loop)
+            const resolvedCriteriaFaces = criteriaPhysIndices.map(pIdx => pIdx !== undefined ? faces[pIdx] : null);
+            const resolvedCriteriaSDFFaces = criteriaSDFPhysSets.map(set => ({
+                x: set.x !== undefined ? faces[set.x] : null,
+                y: set.y !== undefined ? faces[set.y] : null
+            }));
+
+            coloringCtx.chunkFaces = faces;
+            coloringCtx.options.resolvedCriteriaFaces = resolvedCriteriaFaces;
+            coloringCtx.options.resolvedCriteriaSDFFaces = resolvedCriteriaSDFFaces;
+
+            // Calculate world offsets ONCE per chunk
+            const vChunkAny = chunk as any;
+            if (vChunkAny._worldXOffset === undefined) {
+                let wx = 0, wy = 0;
+                const cList = (neo.vGrid as any).config?.chunksList || neo.vGrid.chunks;
+                for (const c of cList) {
+                    if (c.y === chunk.y && c.z === chunk.z && c.x < chunk.x) wx += c.localDimensions.nx;
+                    if (c.x === chunk.x && c.z === chunk.z && c.y < chunk.y) wy += c.localDimensions.ny;
+                }
+                vChunkAny._worldXOffset = wx;
+                vChunkAny._worldYOffset = wy;
             }
 
+            const worldXOffset = vChunkAny._worldXOffset;
+            const worldYOffset = vChunkAny._worldYOffset;
             const nx = chunk.localDimensions.nx;
             const ny = chunk.localDimensions.ny;
 
@@ -109,42 +132,23 @@ export class CanvasAdapterNeo {
                 const dstRowOffset = worldY * totalW;
                 const srcRowOffset = ly * nxPhys;
 
+                coloringCtx.worldY = worldY;
+
                 for (let lx = padding; lx < nx + padding; lx++) {
                     const srcIdx = srcRowOffset + lx;
                     const worldX = worldXOffset + (lx - padding);
                     const dstIdx = dstRowOffset + worldX;
 
-                        // 1. OBSTACLES (Static Priority)
-                        if (obsData && obsData[srcIdx] > 0.9) {
-                            if (colormap === 'spatial-decision') {
-                                pixelData[dstIdx] = 0x00000000; // Transparent for Leaflet
-                            } else {
-                                pixelData[dstIdx] = 0xff282828; // ABGR: 255, 40, 40, 40
-                            }
-                            continue;
-                        }
+                    if (obsData && obsData[srcIdx] > 0.9) {
+                        pixelData[dstIdx] = (colormap === 'spatial-decision') ? 0x00000000 : 0xff282828;
+                        continue;
+                    }
 
-                        const val = data ? data[srcIdx] : 0.0;
-                        
-                        // Use Registry-based coloring (Nuclear Refactor Priority 1)
-                        const coloringCtx = {
-                            minV, maxV, invRange,
-                            chunkFaces: faces,
-                            srcIdx, worldX, worldY,
-                            vorticityFace: physVortIdx,
-                            auxiliaryFaces: auxIndices,
-                            options: {
-                                ...options,
-                                resolvedCriteriaFaces: criteriaFaces,
-                                resolvedCriteriaSDFFaces: criteriaSDFFaces
-                            }
-                        };
-                        
-                        // Select colormap variant (heatmap-criteria vs heatmap)
-                        let activeColormap = colormap;
-                        if (colormap === 'heatmap' && criteria.length > 0) activeColormap = 'heatmap-criteria';
+                    const val = data ? data[srcIdx] : 0.0;
+                    coloringCtx.srcIdx = srcIdx;
+                    coloringCtx.worldX = worldX;
 
-                        pixelData[dstIdx] = ColormapRegistry.get(activeColormap)(val, coloringCtx);
+                    pixelData[dstIdx] = colormapFn(val, coloringCtx);
                 }
             }
         }

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { VirtualGrid } from '../core/topology/VirtualGrid';
-import { MasterBuffer } from '../core/MasterBuffer';
+import { MasterBuffer } from '../core/memory/MasterBuffer';
 import { ParityManager } from '../core/ParityManager';
-import { GpuDispatcher } from '../core/GpuDispatcher';
+import { GpuDispatcher } from '../core/dispatchers/GpuDispatcher';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 import { DataContract } from '../core/DataContract';
 import { HypercubeGPUContext } from '../core/gpu/HypercubeGPUContext';
-import { GpuBufferBridge } from '../core/GpuBufferBridge';
+import { GpuBufferBridge } from '../core/memory/GpuBufferBridge';
 
 // Mock Global WebGPU Enums for NodeJS test environment
 if (typeof (globalThis as any).GPUBufferUsage === 'undefined') {

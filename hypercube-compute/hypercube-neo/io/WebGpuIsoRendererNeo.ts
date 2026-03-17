@@ -1,6 +1,6 @@
 import { HypercubeGPUContext } from '../core/gpu/HypercubeGPUContext';
 import { NeoEngineProxy } from '../core/NeoEngineProxy';
-import { MasterBuffer as NeoMasterBuffer } from '../core/MasterBuffer';
+import { MasterBuffer as NeoMasterBuffer } from '../core/memory/MasterBuffer';
 
 export interface IsoRenderOptions {
     densityFaceIndex: number;

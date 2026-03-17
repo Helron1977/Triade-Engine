@@ -1,5 +1,5 @@
 import { IBufferBridge } from './IBufferBridge';
-import { IMasterBuffer } from './topology/GridAbstractions';
+import { IMasterBuffer } from '../topology/GridAbstractions';
 
 /**
  * GpuBufferBridge: Orchestrates GPU-CPU memory synchronization.
@@ -50,8 +50,13 @@ export class GpuBufferBridge implements IBufferBridge {
         }
     }
 
+    /**
+     * Finalizes the memory state. 
+     * In GPU mode, we avoid automatic full-buffer syncs in the main loop to prevent overwriting 
+     * compute shader results with the CPU shadow buffer (Zero-Stall philosophy).
+     */
     public commit(): void {
-        // GPU pipelines are typically triggered by separate Dispatcher logic,
-        // but this could trigger write-back from staging if needed.
+        // No-op. Call syncToDevice() explicitly if CPU-side changes (like rasterization) 
+        // must be pushed to the GPU.
     }
 }

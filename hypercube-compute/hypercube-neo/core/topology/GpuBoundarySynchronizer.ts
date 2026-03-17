@@ -1,5 +1,5 @@
 import { IVirtualGrid, IBoundarySynchronizer } from './GridAbstractions';
-import { IBufferBridge } from '../IBufferBridge';
+import { IBufferBridge } from '../memory/IBufferBridge';
 import { ParityManager } from '../ParityManager';
 import { HypercubeGPUContext } from '../gpu/HypercubeGPUContext';
 import { DataContract } from '../DataContract';

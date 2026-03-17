@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { NumericalDispatcher } from '../core/NumericalDispatcher';
+import { NumericalDispatcher } from '../core/dispatchers/NumericalDispatcher';
 import { NeoHeatmapKernel } from '../core/kernels/NeoHeatmapKernel';
 import { ParityManager } from '../core/ParityManager';
 import { KernelRegistry } from '../core/kernels/KernelRegistry';

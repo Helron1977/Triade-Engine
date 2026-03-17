@@ -1,4 +1,4 @@
-import { MasterBuffer } from './core/MasterBuffer.js';
+import { MasterBuffer } from './core/memory/MasterBuffer.js';
 
 // The file MasterBuffer.ts has totalSlotsPerChunk logic.
 // I just want to run the exact lines that setFaceData does.

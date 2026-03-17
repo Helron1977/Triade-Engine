@@ -1,17 +1,20 @@
 import { IDispatcher } from './IDispatcher';
-import { IVirtualGrid, IMasterBuffer } from './topology/GridAbstractions';
-import { ParityManager } from './ParityManager';
-import { KernelRegistry } from './kernels/KernelRegistry';
-import { DataContract } from './DataContract';
+import { IVirtualGrid } from '../topology/GridAbstractions';
+import { ParityManager } from '../ParityManager';
+import { KernelRegistry } from '../kernels/KernelRegistry';
+import { DataContract } from '../DataContract';
 
-import { ComputeContext } from './kernels/ComputeContext';
-import { IBufferBridge } from './IBufferBridge';
+import { ComputeContext } from '../kernels/ComputeContext';
+import { IBufferBridge } from '../memory/IBufferBridge';
 
 /**
  * Orchestrates the numerical dispatch for all chunks (Single-threaded).
  * Bridges the declarative schemes with physical memory and kernels.
  */
 export class NumericalDispatcher implements IDispatcher {
+    // We use a mutable handle for the pooled object
+    private pooledContext: any = {};
+
     constructor(
         private vGrid: IVirtualGrid,
         private bridge: IBufferBridge,
@@ -50,6 +53,14 @@ export class NumericalDispatcher implements IDispatcher {
             chunksList: this.vGrid.chunks
         };
 
+        // Initialize/Update persistent context properties
+        this.pooledContext.pNx = pNx;
+        this.pooledContext.pNy = pNy;
+        this.pooledContext.padding = padding;
+        this.pooledContext.indices = faceIndices;
+        this.pooledContext.params = globalParams;
+        this.pooledContext.gridConfig = grid.config;
+
         // 3. Iterate through all chunks
         for (const vChunk of this.vGrid.chunks) {
             const pViews = this.bridge.getChunkViews(vChunk.id);
@@ -62,23 +73,16 @@ export class NumericalDispatcher implements IDispatcher {
                 }
             }
 
-            // 4. Compute Context Creation & Execution
+            // 4. Compute Context Execution using pooled object
+            this.pooledContext.nx = vChunk.localDimensions.nx;
+            this.pooledContext.ny = vChunk.localDimensions.ny;
+            this.pooledContext.chunk = vChunk;
+
             for (const scheme of descriptor.rules) {
                 const kernel = KernelRegistry.get(scheme.type);
                 if (kernel) {
-                    const context: ComputeContext = {
-                        nx: vChunk.localDimensions.nx,
-                        ny: vChunk.localDimensions.ny,
-                        pNx,
-                        pNy,
-                        padding,
-                        scheme,
-                        indices: faceIndices,
-                        params: globalParams,
-                        chunk: vChunk,
-                        gridConfig: grid.config
-                    };
-                    kernel.execute(pViews, context);
+                    this.pooledContext.scheme = scheme;
+                    kernel.execute(pViews, this.pooledContext as ComputeContext);
                 }
             }
         }

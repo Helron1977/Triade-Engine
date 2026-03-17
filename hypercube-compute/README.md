@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/docs/assets/logo.png" alt="Hypercube Engine Logo" width="200" style="border-radius:20px;"/>
-  <h1>🌊 Hypercube Engine V5 🚀</h1>
+  <img src="https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/docs/assets/logo.png" alt="Hypercube Engine Logo" width="200" style="border-radius:20px;" onerror="this.src='https://img.icons8.com/isometric/512/cube.png';"/>
+  <h1>🌊 Hypercube Neo 🚀</h1>
   <p><strong>A GodMode O(1) Tensor-based Compute Engine for Web & Node.js</strong></p>
   
   [![npm version](https://img.shields.io/npm/v/hypercube-compute.svg?style=flat-square)](https://www.npmjs.com/package/hypercube-compute)
@@ -74,8 +74,8 @@ A fully continuous computational fluid dynamics solver. It forces "wind" through
 
 **WEBGPU Performance**: The LBM engine is fully ported to WGSL, capable of 60 FPS simulations with complex vorticity calculations entirely on the GPU.
 
-![Vortex LBM WebGPU](https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/docs/assets/webgpu_vortex.png)
-*Real-time fluid vorticity calculated at 60 FPS via WebGPU.*
+![Ocean GPU Demo](https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/hypercube-neo/docs/media/ocean-gpu-demo.webp)
+*Real-time fluid vorticity calculated at 60 FPS via WebGPU (Hypercube Neo).*
 
 ### 🌊 Ocean Simulator
 An open-world toric-bounded oceanic current simulator powered by the D2Q9 LBM Engine, coupled with a procedural Heatmap generator. It computes fluid velocity and allows simple `Boat` entities to be routed across the continuous fluid grid.
@@ -132,21 +132,10 @@ Simulation océanique simplifiée : courants, tourbillons, forcing interactif (v
 ### ☁️ Simplified Fluid Dynamics (V3)
 A lightweight Eulerian fluid simulator using pure Advection and Bilinear Sampling. Designed to simulate smoke, gases, and empirical thermal buoyancy directly via WebGPU float32 arrays.
 
-**Minimal Example (`/examples/fluid-simple.ts`):**
+**Minimal Example (`/hypercube-neo/showcase/cpu/main.ts`):** 
 ```typescript
-import { HypercubeGrid, HypercubeMasterBuffer, FluidEngine } from 'hypercube-compute';
-
-const masterBuffer = new HypercubeMasterBuffer(1024 * 1024);
-const grid = await HypercubeGrid.create(
-    1, 1, 64, masterBuffer,
-    () => new FluidEngine(1.0, 0.4, 0.98),
-    6, false, 'cpu', false
-);
-
-// Splat some heat & density, then compute
-const engine = grid.cubes[0][0]?.engine as FluidEngine;
-engine.addSplat(grid.cubes[0][0]?.faces!, 64, 32, 60, 0, 0, 10, 1.0, 5.0);
-await grid.compute();
+import { HypercubeNeoFactory } from '../../core/HypercubeNeoFactory';
+// See showcase scripts for full integration examples
 ```
 
 ---
@@ -228,20 +217,26 @@ const loop = () => {
 ---
 title: Hypercube Architecture - Contiguous O(1) Memory
 ---
-    A[MasterBuffer<br>Contiguous Memory] -->|Managed by| Bridge[IBufferBridge]
+    subgraph Core ["Core Orchestration"]
+        MB[MasterBuffer<br>./core/memory/MasterBuffer.ts] -->|Managed by| Bridge[IBufferBridge]
+        Engine[NeoEngineProxy<br>./core/NeoEngineProxy.ts] -->|Uses| Disp[IDispatcher<br>./core/dispatchers/]
+        Engine -->|Uses| Rast[IRasterizer<br>./core/rasterization/]
+        Engine -->|Uses| Sync[IBoundarySync<br>./core/topology/]
+    end
+    
     Bridge -->|CPU/Worker| B(HypercubeGrid)
     Bridge -->|VRAM| GPU[WebGPU Context]
     
-    B --> C1[HypercubeChunk<br>Chunk A]
-    B --> C2[HypercubeChunk<br>Chunk B]
+    B --> C1[VirtualChunk<br>Chunk A]
+    B --> C2[VirtualChunk<br>Chunk B]
     
-    C1 <-->|Bridge Sync| C2
+    C1 <-->|Topology Sync| C2
     
-    C1 -->|Holds| F1[Face 0: Float32Array]
-    C1 -->|Holds| F2[Face 1: Float32Array]
+    C1 -->|Physical Views| F1[Face 0: Float32Array]
+    C1 -->|Physical Views| F2[Face 1: Float32Array]
     
-    F1 -.->|Resolved via Binder| E[IKernel<br>Physics Logic]
-    F2 -.->|Resolved via Binder| E
+    F1 -.->|Resolved via KernelRegistry| E[IKernel<br>Physics Logic]
+    F2 -.->|Resolved via KernelRegistry| E
 ```
 
 ---
@@ -306,7 +301,7 @@ Requires these server security headers:
 👉 **[View Interactive Multi-Engine Demo](https://helron1977.github.io/Hypercube-Compute/)**
 - **Switch Engines**: Use the buttons to swap logic.
 - **Interact**: Click and drag to create vortices or draw obstacles.
-- **3D**: Check the `07-volume-diffusion-3d` example for volumetric rendering.
+- **3D**: Check the `heat-cpu.html` or `heat-gpu.html` in the `showcase/` folder for volumetric rendering.
 
 ---
 

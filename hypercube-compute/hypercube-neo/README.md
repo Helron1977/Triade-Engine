@@ -22,7 +22,11 @@ Hypercube Neo is a high-performance **Cartesian Spatial Computing Engine**. It l
 
 ## 📁 Repository Structure
 
-- `/core`: The heart of the engine (MasterBuffer, Dispatchers, Factory).
+- `/core`: The heart of the engine (Physical mapping, Dispatchers, Orchestration).
+  - `/memory`: `MasterBuffer` (VRAM/RAM anchor) and `IBufferBridge`.
+  - `/dispatchers`: `Numerical`, `Parallel`, and `Gpu` executors.
+  - `/rasterization`: `ObjectRasterizer` for baking dynamic objects.
+  - `/topology`: `VirtualGrid` and `BoundarySynchronizer` managers.
   - `/gpu`: Dedicated WebGPU context and pipeline management.
   - `/kernels`: Pure numerical algorithms (LBM, Advection, Diffusion).
 - `/io`: Input/Output adapters (WebHooks, Canvas Rendering, IsoRendererNeo).

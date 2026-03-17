@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { VirtualGrid } from '../core/topology/VirtualGrid';
-import { MasterBuffer } from '../core/MasterBuffer';
-import { ObjectRasterizer } from '../core/ObjectRasterizer';
-import { CpuBufferBridge } from '../core/CpuBufferBridge';
+import { MasterBuffer } from '../core/memory/MasterBuffer';
+import { ObjectRasterizer } from '../core/rasterization/ObjectRasterizer';
+import { CpuBufferBridge } from '../core/memory/CpuBufferBridge';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 
 describe('Hypercube Neo: Real-time Rasterization', () => {

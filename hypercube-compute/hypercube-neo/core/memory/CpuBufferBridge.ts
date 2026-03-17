@@ -1,5 +1,5 @@
 import { IBufferBridge } from './IBufferBridge';
-import { IMasterBuffer } from './topology/GridAbstractions';
+import { IMasterBuffer } from '../topology/GridAbstractions';
 
 /**
  * CpuBufferBridge: High-performance passthrough bridge for CPU computation.
@@ -45,7 +45,10 @@ export class CpuBufferBridge implements IBufferBridge {
         // No-op for pure CPU mode (data is already in SharedArrayBuffer)
     }
 
+    /**
+     * Finalizes the memory state. No-op for synchronous CPU execution.
+     */
     public commit(): void {
-        // No-op for synchronous CPU execution
+        // No-op
     }
 }
