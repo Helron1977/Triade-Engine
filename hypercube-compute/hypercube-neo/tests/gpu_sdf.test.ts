@@ -5,10 +5,11 @@ import { ParityManager } from '../core/ParityManager';
 import { GpuDispatcher } from '../core/GpuDispatcher';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 import { HypercubeGPUContext } from '../core/gpu/HypercubeGPUContext';
+import { GpuBufferBridge } from '../core/GpuBufferBridge';
 
 // Mock Global WebGPU Enums
-if (typeof (global as any).GPUBufferUsage === 'undefined') {
-    (global as any).GPUBufferUsage = { STORAGE: 0x0040, UNIFORM: 0x0010, COPY_SRC: 0x0004, COPY_DST: 0x0008 };
+if (typeof (globalThis as any).GPUBufferUsage === 'undefined') {
+    (globalThis as any).GPUBufferUsage = { STORAGE: 0x0040, UNIFORM: 0x0010, COPY_SRC: 0x0004, COPY_DST: 0x0008 };
 }
 
 describe('Hypercube Neo: GPU SDF Orchestration', () => {
@@ -40,12 +41,13 @@ describe('Hypercube Neo: GPU SDF Orchestration', () => {
     it('should map JFA step to the correct uniform offset in GpuDispatcher', () => {
         const vGrid = new VirtualGrid(config, descriptor);
         const mBuffer = new MasterBuffer(vGrid);
+        const bridge = new GpuBufferBridge(mBuffer);
         const parityManager = new ParityManager(vGrid.dataContract);
-        const dispatcher = new GpuDispatcher(vGrid, mBuffer, parityManager);
+        const dispatcher = new GpuDispatcher(vGrid, bridge, parityManager);
 
         const strideFace = mBuffer.strideFace;
         const alignedStrideFace = HypercubeGPUContext.alignToUniform(strideFace * 4);
-        
+
         // Simplified check: Does it call alignToUniform correctly for chunk 0
         const params = dispatcher.getChunkBufferParams(0);
         expect(params.offset).toBe(0);

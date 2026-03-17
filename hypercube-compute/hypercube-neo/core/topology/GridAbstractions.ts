@@ -1,4 +1,5 @@
 import { BoundaryRole, GridBoundaries, Dimension3D, HypercubeConfig, VirtualObject } from '../types';
+import { IBufferBridge } from '../IBufferBridge';
 
 /**
  * Descriptor for a joint between two chunks or a world boundary.
@@ -81,7 +82,7 @@ export interface IMasterBuffer {
      * Direct buffer injection for a specific face.
      * Useful for importing high-resolution topology maps (heightmaps, obstacles).
      */
-    setFaceData(chunkId: string, faceName: string, data: Float32Array | number[]): void;
+    setFaceData(chunkId: string, faceName: string, data: Float32Array | number[], fillAllPingPong?: boolean): void;
 
     /**
      * Copy data from GPU back to the CPU ArrayBuffer.
@@ -104,10 +105,9 @@ export interface IMasterBuffer {
  */
 export interface IBoundarySynchronizer {
     /**
-     * Synchronize all 'joint' boundaries for the entire grid.
      * Must handle faces, edges, and corners for 2D/3D.
      */
-    syncAll(vGrid: IVirtualGrid, mBuffer: IMasterBuffer, parityManager?: any, mode?: 'read' | 'write'): void;
+    syncAll(vGrid: IVirtualGrid, bridge: IBufferBridge, parityManager?: any, mode?: 'read' | 'write'): void;
 }
 
 /**
@@ -121,7 +121,7 @@ export interface IRasterizer {
     rasterizeChunk(
         vChunk: VirtualChunk,
         vGrid: IVirtualGrid,
-        mBuffer: IMasterBuffer,
+        bridge: IBufferBridge,
         t: number,
         parityTarget?: 'read' | 'write'
     ): void;

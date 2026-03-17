@@ -34,6 +34,38 @@
             "diffusionRate": 0.2,
             "pixelScale": 2.0
         },
+        "objects": [
+            {
+                "id": "heat_eater",
+                "type": "circle",
+                "position": { "x": 231, "y": 103 },
+                "dimensions": { "w": 50, "h": 50 },
+                "properties": {
+                    "obstacles": 0.7,
+                    "temperature": 0.0
+                },
+                "isVisible": false,
+                "isBaked": false
+            },
+            {
+                "id": "source_1",
+                "type": "circle",
+                "position": { "x": 384, "y": 116 },
+                "dimensions": { "w": 24, "h": 24 },
+                "properties": {
+                    "temperature": 4.0
+                }
+            },
+            {
+                "id": "source_2",
+                "type": "circle",
+                "position": { "x": 148, "y": 120 },
+                "dimensions": { "w": 16, "h": 16 },
+                "properties": {
+                    "temperature": 3.0
+                }
+            }
+        ],
         "engine": "Heat-GPU"
     }
 }

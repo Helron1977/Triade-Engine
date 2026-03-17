@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { VirtualGrid } from '../core/topology/VirtualGrid';
 import { MasterBuffer } from '../core/MasterBuffer';
+import { CpuBufferBridge } from '../core/CpuBufferBridge';
 import { BoundarySynchronizer } from '../core/topology/BoundarySynchronizer';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 
@@ -29,11 +30,12 @@ describe('Hypercube Neo: Boundary Synchronization', () => {
     const synchronizer = new BoundarySynchronizer();
 
     it('should transfer data across direct faces (Left/Right)', () => {
-        const c0_0 = mBuffer.getChunkViews('chunk_0_0_0');
-        const c1_0 = mBuffer.getChunkViews('chunk_1_0_0');
+        const bridge = new CpuBufferBridge(mBuffer);
+        const c0_0 = bridge.getChunkViews('chunk_0_0_0');
+        const c1_0 = bridge.getChunkViews('chunk_1_0_0');
 
-        const fi_0 = c0_0.faces[0];
-        const fi_1 = c1_0.faces[0];
+        const fi_0 = c0_0[0];
+        const fi_1 = c1_0[0];
 
         // nx=16, pNx=18. 
         // c0_0 is at x=0..15. its Right Real is x=16. 
@@ -43,18 +45,19 @@ describe('Hypercube Neo: Boundary Synchronization', () => {
         const pNx = 18;
         fi_0[8 * pNx + 16] = 42;
 
-        synchronizer.syncAll(vGrid, mBuffer);
+        synchronizer.syncAll(vGrid, bridge);
 
         // c1_0's Left Ghost (0, 8) should now have 42
         expect(fi_1[8 * pNx + 0]).toBe(42);
     });
 
     it('should transfer data across diagonal corners (The "Fool-Proof" Test)', () => {
-        const c0_0 = mBuffer.getChunkViews('chunk_0_0_0'); // Top-Left chunk
-        const c1_1 = mBuffer.getChunkViews('chunk_1_1_0'); // Bottom-Right chunk
+        const bridge = new CpuBufferBridge(mBuffer);
+        const c0_0 = bridge.getChunkViews('chunk_0_0_0'); // Top-Left chunk
+        const c1_1 = bridge.getChunkViews('chunk_1_1_0'); // Bottom-Right chunk
 
-        const fi_0_0 = c0_0.faces[0];
-        const fi_1_1 = c1_1.faces[0];
+        const fi_0_0 = c0_0[0];
+        const fi_1_1 = c1_1[0];
 
         const pNx = 18;
         const nx = 16;
@@ -63,7 +66,7 @@ describe('Hypercube Neo: Boundary Synchronization', () => {
         // c0_0's Bottom-Right Real cell is at (nx, ny) = (16, 16)
         fi_0_0[ny * pNx + nx] = 99;
 
-        synchronizer.syncAll(vGrid, mBuffer);
+        synchronizer.syncAll(vGrid, bridge);
 
         // c1_1's Top-Left Ghost cell is at (0, 0)
         // It should have received 99 from c0_0
@@ -95,29 +98,31 @@ describe('Hypercube Neo: Periodic Boundaries', () => {
     const synchronizer = new BoundarySynchronizer();
 
     it('should seamlessly wrap left/right world edges', () => {
-        const c0_0 = mBuffer.getChunkViews('chunk_0_0_0'); // Top-Left
-        const c1_0 = mBuffer.getChunkViews('chunk_1_0_0'); // Top-Right
+        const bridge = new CpuBufferBridge(mBuffer);
+        const c0_0 = bridge.getChunkViews('chunk_0_0_0'); // Top-Left
+        const c1_0 = bridge.getChunkViews('chunk_1_0_0'); // Top-Right
 
-        const fi_0 = c0_0.faces[0];
-        const fi_1 = c1_0.faces[0];
+        const fi_0 = c0_0[0];
+        const fi_1 = c1_0[0];
 
         // Write to Rightmost real cell of c1_0
         const nx = 16;
         const pNx = 18;
         fi_1[8 * pNx + nx] = 77;
 
-        synchronizer.syncAll(vGrid, mBuffer);
+        synchronizer.syncAll(vGrid, bridge);
 
         // c0_0's Leftmost ghost cell (0) should receive it
         expect(fi_0[8 * pNx + 0]).toBe(77);
     });
 
     it('should seamlessly wrap diagonal world corners', () => {
-        const c0_0 = mBuffer.getChunkViews('chunk_0_0_0'); // Top-Left
-        const c1_1 = mBuffer.getChunkViews('chunk_1_1_0'); // Bottom-Right
+        const bridge = new CpuBufferBridge(mBuffer);
+        const c0_0 = bridge.getChunkViews('chunk_0_0_0'); // Top-Left
+        const c1_1 = bridge.getChunkViews('chunk_1_1_0'); // Bottom-Right
 
-        const fi_0 = c0_0.faces[0];
-        const fi_1_1 = c1_1.faces[0];
+        const fi_0 = c0_0[0];
+        const fi_1_1 = c1_1[0];
 
         const nx = 16;
         const ny = 16;
@@ -126,7 +131,7 @@ describe('Hypercube Neo: Periodic Boundaries', () => {
         // Write to Bottom-Right real cell of the entire world (c1_1)
         fi_1_1[ny * pNx + nx] = 88;
 
-        synchronizer.syncAll(vGrid, mBuffer);
+        synchronizer.syncAll(vGrid, bridge);
 
         // It should wrap around to the Top-Left ghost cell of the entire world (c0_0)
         expect(fi_0[0 * pNx + 0]).toBe(88);

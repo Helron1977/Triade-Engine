@@ -1,9 +1,9 @@
 import { IDispatcher } from './IDispatcher';
-import { IVirtualGrid, IMasterBuffer } from './topology/GridAbstractions';
+import { IVirtualGrid } from './topology/GridAbstractions';
+import { IBufferBridge } from './IBufferBridge';
 import { ParityManager } from './ParityManager';
 import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
 import { DataContract } from './DataContract';
-import { MasterBuffer } from './MasterBuffer';
 import { GpuKernelRegistry } from './kernels/GpuKernelRegistry';
 import { TopologyResolver } from './topology/TopologyResolver';
 
@@ -21,7 +21,7 @@ export class GpuDispatcher implements IDispatcher {
 
     constructor(
         private vGrid: IVirtualGrid,
-        private mBuffer: IMasterBuffer,
+        private bridge: IBufferBridge,
         private parityManager: ParityManager
     ) {
         if (!HypercubeGPUContext.isInitialized) {
@@ -46,8 +46,7 @@ export class GpuDispatcher implements IDispatcher {
         const grid = this.vGrid as any;
         const dataContract = grid.dataContract as DataContract;
         const descriptor = dataContract.descriptor;
-        const mBuf = this.mBuffer as MasterBuffer;
-        const gpuBuffer = mBuf.gpuBuffer;
+        const gpuBuffer = this.bridge.gpuBuffer;
 
         console.log(`GpuDispatcher: Dispatching Tick ${this.parityManager.currentTick}, Rules: ${descriptor.rules?.length || 0}`);
 
@@ -95,7 +94,7 @@ export class GpuDispatcher implements IDispatcher {
                 u32Data[base + 7] = this.parityManager.currentTick;
                 u32Data[base + 8] = vChunk.x;
                 u32Data[base + 9] = vChunk.y;
-                u32Data[base + 10] = mBuf.strideFace;
+                u32Data[base + 10] = this.bridge.strideFace;
                 u32Data[base + 11] = grid.config.objects?.length || 0;
 
                 // Absolute Physical Offsets via ParityManager (Agnostic layout)
@@ -179,8 +178,8 @@ export class GpuDispatcher implements IDispatcher {
                 const uniformOffset = i * bytesPerChunkAligned;
 
                 const gid = vChunk.y * this.vGrid.chunkLayout.x + vChunk.x;
-                const chunkBufferOffset = gid * mBuf.totalSlotsPerChunk * mBuf.strideFace * 4;
-                const chunkBufferSize = mBuf.totalSlotsPerChunk * mBuf.strideFace * 4;
+                const chunkBufferOffset = gid * this.bridge.totalSlotsPerChunk * this.bridge.strideFace * 4;
+                const chunkBufferSize = this.bridge.totalSlotsPerChunk * this.bridge.strideFace * 4;
 
                 const bindGroup = this.getBindGroup(
                     pipeline,
@@ -208,10 +207,10 @@ export class GpuDispatcher implements IDispatcher {
     }
 
     public getChunkBufferParams(chunkIdx: number) {
-        const strideFaceBytes = this.mBuffer.strideFace * 4;
+        const strideFaceBytes = this.bridge.strideFace * 4;
         return {
-            offset: chunkIdx * this.mBuffer.totalSlotsPerChunk * strideFaceBytes,
-            size: this.mBuffer.totalSlotsPerChunk * strideFaceBytes
+            offset: chunkIdx * this.bridge.totalSlotsPerChunk * strideFaceBytes,
+            size: this.bridge.totalSlotsPerChunk * strideFaceBytes
         };
     }
 

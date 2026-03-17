@@ -46,10 +46,17 @@ describe('NeoHeatmapKernel (CPU Physics)', () => {
         const indices = {
             'temp': { read: 0, write: 1 },
             'obstacles': { read: 2, write: 2 },
-            'injection_mask': { read: 3, write: 3 }
+            'injection': { read: 3, write: 3 }
         };
 
-        kernel.execute([uRead, uWrite, obstacles, injection], scheme, indices, gridConfig, chunk);
+        kernel.execute([uRead, uWrite, obstacles, injection], {
+            nx, ny, pNx, pNy, padding: 1,
+            scheme,
+            indices,
+            gridConfig,
+            chunk,
+            params: {}
+        } as any);
 
         // Laplacian = (0+0+0+0) - 4*1.0 = -4.0
         // nextVal = 1.0 + 0.1 * (-4.0) = 0.6
@@ -74,10 +81,14 @@ describe('NeoHeatmapKernel (CPU Physics)', () => {
         const indices = {
             'temp': { read: 0, write: 1 },
             'obstacles': { read: 2, write: 2 },
-            'injection_mask': { read: 3, write: 3 }
+            'injection': { read: 3, write: 3 }
         };
 
-        kernel.execute([uRead, uWrite, obstacles, injection], { type: 'neo-heat', source: 'temp', params: { decay_factor: 1.0 } }, indices, gridConfig, chunk);
+        kernel.execute([uRead, uWrite, obstacles, injection], {
+            nx, ny, pNx, pNy, padding: 1,
+            scheme: { type: 'neo-heat', source: 'temp', params: { decay_factor: 1.0 } },
+            indices, gridConfig, chunk, params: {}
+        } as any);
 
         expect(uWrite[centerIdx]).toBe(0.0);
     });
@@ -94,10 +105,14 @@ describe('NeoHeatmapKernel (CPU Physics)', () => {
         const indices = {
             'temp': { read: 0, write: 1 },
             'obstacles': { read: 2, write: 2 },
-            'injection_mask': { read: 3, write: 3 }
+            'injection': { read: 3, write: 3 }
         };
 
-        kernel.execute([uRead, uWrite, obstacles, injection], { type: 'neo-heat', source: 'temp', params: { decay_factor: 1.0 } }, indices, gridConfig, chunk);
+        kernel.execute([uRead, uWrite, obstacles, injection], {
+            nx, ny, pNx, pNy, padding: 1,
+            scheme: { type: 'neo-heat', source: 'temp', params: { decay_factor: 1.0 } },
+            indices, gridConfig, chunk, params: {}
+        } as any);
 
         expect(uWrite[centerIdx]).toBe(5.0);
     });
@@ -111,11 +126,15 @@ describe('NeoHeatmapKernel (CPU Physics)', () => {
         const indices = {
             'temp': { read: 0, write: 1 },
             'obstacles': { read: 2, write: 2 },
-            'injection_mask': { read: 3, write: 3 }
+            'injection': { read: 3, write: 3 }
         };
 
         // If dt=0, only decay should apply
-        kernel.execute([uRead, uWrite, obstacles, injection], { type: 'neo-heat', source: 'temp', params: { diffusion_rate: 0, decay_factor: 0.9 } }, indices, gridConfig, chunk);
+        kernel.execute([uRead, uWrite, obstacles, injection], {
+            nx, ny, pNx, pNy, padding: 1,
+            scheme: { type: 'neo-heat', source: 'temp', params: { diffusion_rate: 0, decay_factor: 0.9 } },
+            indices, gridConfig, chunk, params: {}
+        } as any);
 
         const centerIdx = 2 * pNx + 2;
         expect(uWrite[centerIdx]).toBeCloseTo(0.9);

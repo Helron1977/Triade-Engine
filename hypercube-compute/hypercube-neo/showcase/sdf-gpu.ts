@@ -1,6 +1,6 @@
 import { HypercubeNeoFactory } from '../core/HypercubeNeoFactory';
 import { CanvasAdapterNeo } from '../io/CanvasAdapterNeo';
-import { BenchmarkHUD } from '../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../io/BenchmarkHUD';
 import { WebGpuRendererNeo } from '../io/WebGpuRendererNeo';
 
 // Leaflet Global
@@ -76,8 +76,8 @@ function injectVoronoiSeeds(engine: any, faceBaseName: string, pois: POI[]) {
                 chunkDataY[dstRowOffset + lx] = initialSeedY[srcRowOffset + worldX];
             }
         }
-        engine.mBuffer.setFaceData(chunk.id, `${faceBaseName}_x`, chunkDataX, true);
-        engine.mBuffer.setFaceData(chunk.id, `${faceBaseName}_y`, chunkDataY, true);
+        engine.bridge.setFaceData(chunk.id, `${faceBaseName}_x`, chunkDataX, true);
+        engine.bridge.setFaceData(chunk.id, `${faceBaseName}_y`, chunkDataY, true);
     }
 }
 
@@ -213,7 +213,7 @@ async function bootSDF() {
                 chunkData[ly * vnx + lx] = obstaclesData[wY * SIZE + wX];
             }
         }
-        engine.mBuffer.setFaceData(chunk.id, 'obstacles', chunkData);
+        engine.bridge.setFaceData(chunk.id, 'obstacles', chunkData);
     }
 
     // Inject exact POI coordinates
@@ -222,7 +222,7 @@ async function bootSDF() {
     }
 
     // CRITICAL: Sync injected CPU data to GPU VRAM before baking!
-    await engine.mBuffer.syncToDevice();
+    await engine.bridge.syncToDevice();
     console.log("SDF: Seeds synchronized to VRAM.");
 
     // Trigger GPU step to ensure initial state

@@ -59,7 +59,7 @@ describe('Showcase Heatmap UI & Rendering Logic', () => {
                 }
 
                 // If setFaceData survives, mapping is successful
-                expect(() => engine.mBuffer.setFaceData(chunk.id, faceName, chunkData)).not.toThrow();
+                expect(() => engine.bridge.setFaceData(chunk.id, faceName, chunkData)).not.toThrow();
             }
         };
 
@@ -70,7 +70,7 @@ describe('Showcase Heatmap UI & Rendering Logic', () => {
 
         // Validate mask made it to the memory buffer array
         const fIdx = engine.parityManager.getFaceIndices('temperature').read;
-        const chunk0 = engine.mBuffer.getChunkViews('chunk_0_0_0').faces[fIdx];
+        const chunk0 = engine.bridge.getChunkViews('chunk_0_0_0')[fIdx];
 
         // Assert the injection values were placed into the grid
         expect(chunk0).toBeDefined();

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { VirtualGrid } from '../core/topology/VirtualGrid';
 import { MasterBuffer } from '../core/MasterBuffer';
 import { ObjectRasterizer } from '../core/ObjectRasterizer';
+import { CpuBufferBridge } from '../core/CpuBufferBridge';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 
 describe('Hypercube Neo: Real-time Rasterization', () => {
@@ -47,9 +48,10 @@ describe('Hypercube Neo: Real-time Rasterization', () => {
 
         const vGrid = new VirtualGrid(config, urbanDescriptor);
         const mBuffer = new MasterBuffer(vGrid);
+        const bridge = new CpuBufferBridge(mBuffer);
         const rasterizer = new ObjectRasterizer();
 
-        rasterizer.rasterizeChunk(vGrid.chunks[0], vGrid, mBuffer, 0);
+        rasterizer.rasterizeChunk(vGrid.chunks[0], vGrid, bridge, 0);
 
         const views = mBuffer.getChunkViews('chunk_0_0_0');
         const heatView = views.faces[0];
@@ -88,10 +90,11 @@ describe('Hypercube Neo: Real-time Rasterization', () => {
 
         const vGrid = new VirtualGrid(config, urbanDescriptor);
         const mBuffer = new MasterBuffer(vGrid);
+        const bridge = new CpuBufferBridge(mBuffer);
         const rasterizer = new ObjectRasterizer();
 
         // At t=1, position should be x=10
-        rasterizer.rasterizeChunk(vGrid.chunks[0], vGrid, mBuffer, 1.0);
+        rasterizer.rasterizeChunk(vGrid.chunks[0], vGrid, bridge, 1.0);
 
         const views = mBuffer.getChunkViews('chunk_0_0_0');
         const heatView = views.faces[0];

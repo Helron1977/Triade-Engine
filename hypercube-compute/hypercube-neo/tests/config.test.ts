@@ -44,7 +44,7 @@ describe('Hypercube Neo: Declarative Configuration Validation', () => {
         const chunk0 = neo.vGrid.chunks[0];
         // Total view size per face = (nx/chunks.x + 2 padding) * (ny/chunks.y + 2 padding)
         // (32 + 2) * (256 + 2) = 34 * 258 = 8772
-        const pViews = neo.mBuffer.getChunkViews(chunk0.id).faces;
+        const pViews = neo.bridge.getChunkViews(chunk0.id);
         expect(pViews[0].length).toBe(34 * 258);
     });
 

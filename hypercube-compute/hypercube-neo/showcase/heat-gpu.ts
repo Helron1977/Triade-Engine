@@ -1,6 +1,6 @@
 import { HypercubeNeoFactory } from '../core/HypercubeNeoFactory';
 import { WebGpuRendererNeo } from '../io/WebGpuRendererNeo';
-import { BenchmarkHUD } from '../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../io/BenchmarkHUD';
 
 async function main() {
     const resManifest = await fetch('./showcase-heat-gpu.json?v=' + Date.now());
@@ -38,33 +38,28 @@ async function main() {
         const t2 = frame * 0.02 + Math.PI;
         const obsX = 256 + Math.sin(frame * 0.01) * 120;
 
-        // Objects are sent as GPU uniforms via GpuDispatcher.
-        // Cache the objects array to avoid expensive allocation if not changed
-        const currentObjects = [
-            {
-                id: 'heat_eater',
-                type: 'circle',
-                position: { x: obsX - 25, y: 128 - 25 },
-                dimensions: { w: 50, h: 50 },
-                properties: { obstacles: 1.0, temperature: 0.0 }
-            },
-            {
-                id: 'source_1',
-                type: 'circle',
-                position: { x: 256 + Math.cos(t1) * 140 - 12, y: 128 + Math.sin(t1 * 1.5) * 80 - 12 },
-                dimensions: { w: 24, h: 24 },
-                properties: { obstacles: 0.0, temperature: 4.0 }
-            },
-            {
-                id: 'source_2',
-                type: 'circle',
-                position: { x: 256 + Math.cos(t2) * 100 - 8, y: 128 + Math.sin(t2 * 2.1) * 110 - 8 },
-                dimensions: { w: 16, h: 16 },
-                properties: { obstacles: 0.0, temperature: 3.0 }
-            }
-        ];
+        // Objects are updated in the manifest and sent as GPU uniforms via GpuDispatcher.
+        const objects = (engine.vGrid as any).config.objects;
 
-        (engine.vGrid as any).config.objects = currentObjects;
+        // 1. Move Heat Eater
+        const heater = objects.find((o: any) => o.id === 'heat_eater');
+        if (heater) {
+            heater.position.x = obsX - 25;
+            heater.position.y = 128 - 25;
+        }
+
+        // 2. Orbit sources
+        const s1 = objects.find((o: any) => o.id === 'source_1');
+        if (s1) {
+            s1.position.x = 256 + Math.cos(t1) * 140 - 12;
+            s1.position.y = 128 + Math.sin(t1 * 1.5) * 80 - 12;
+        }
+
+        const s2 = objects.find((o: any) => o.id === 'source_2');
+        if (s2) {
+            s2.position.x = 256 + Math.cos(t2) * 100 - 8;
+            s2.position.y = 128 + Math.sin(t2 * 2.1) * 110 - 8;
+        }
 
         // Compute step (single iteration per render frame)
         await engine.step(1);

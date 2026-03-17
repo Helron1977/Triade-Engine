@@ -1,18 +1,24 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme } from '../types';
-import { VirtualChunk } from '../GridAbstractions';
+import { ComputeContext } from './ComputeContext';
 
 /**
  * Kernel for adding Forces (Gravitational, Buoyancy, etc.).
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class ForceKernel implements IKernel {
+    public readonly metadata = {
+        roles: {
+            source: 'any',
+            destination: 'any'
+        }
+    };
+
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
+        const { nx, ny, padding, pNx, scheme, indices } = context;
+
         const sourceFace = scheme.source;
         const destFace = scheme.destination || sourceFace;
 
@@ -21,11 +27,6 @@ export class ForceKernel implements IKernel {
 
         const src = views[srcIdx];
         const dst = views[dstIdx];
-
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = 1;
-        const pNx = nx + 2 * padding;
 
         const multiplier = (scheme.params?.multiplier as number) || 1.0;
         const dt = (scheme.params?.dt as number) || 0.1;

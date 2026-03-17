@@ -1,6 +1,5 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme } from '../types';
-import { VirtualChunk } from '../GridAbstractions';
+import { ComputeContext } from './ComputeContext';
 
 /**
  * LBMD2Q9Kernel
@@ -8,8 +7,18 @@ import { VirtualChunk } from '../GridAbstractions';
  * 1. Pull-Streaming (from neighbors, including ghost cells)
  * 2. Collision (BGK relaxation)
  * 3. Obstacle Bounce-Back
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class LBMD2Q9Kernel implements IKernel {
+    public readonly metadata = {
+        roles: {
+            source: 'f0',
+            destination: 'f0',
+            obstacles: 'obstacles',
+            auxiliary: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8']
+        }
+    };
+
     private readonly cx = [0, 1, 0, -1, 0, 1, -1, -1, 1]; // E, N, W, S, NE, NW, SW, SE
     private readonly cy = [0, 0, 1, 0, -1, 1, 1, -1, -1];
     private readonly w = [4.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 1.0 / 36.0, 1.0 / 36.0, 1.0 / 36.0, 1.0 / 36.0];
@@ -17,15 +26,9 @@ export class LBMD2Q9Kernel implements IKernel {
 
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = gridConfig.padding ?? 1;
-        const pNx = nx + 2 * padding;
+        const { nx, ny, padding, pNx, scheme, indices } = context;
 
         const omega = (scheme.params?.omega as number) || 1.75;
         const om_1 = 1.0 - omega;

@@ -178,6 +178,8 @@ export interface VirtualObject {
     };
 
     renderOnly?: boolean; // If true, don't incorporate into compute grid
+    isVisible?: boolean;  // If false, should be ignored by the renderer (declarative hint)
+    isBaked?: boolean;    // If false, the kernel handles it dynamically (no buffer trail)
 }
 
 export interface HypercubeConfig {

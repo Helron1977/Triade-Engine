@@ -62,12 +62,12 @@ describe('LBM ZERO LEAKAGE DEBUGGER (Proxy)', () => {
 
         for (let s = 0; s < 5; s++) {
             await engine.step(s);
-            const chunk0 = engine.mBuffer.getChunkViews('chunk_0_0_0').faces[dIdx];
+            const chunk0 = engine.bridge.getChunkViews('chunk_0_0_0')[dIdx];
             const sumRow1 = Array.from({ length: pNx }).reduce((acc, _, i) => acc + chunk0[1 * pNx + i], 0);
             console.log(`Step ${s}: Chunk0 Row 1 Heat Sum = ${sumRow1}`);
         }
 
-        const chunk1 = engine.mBuffer.getChunkViews('chunk_1_0_0').faces[dIdx];
+        const chunk1 = engine.bridge.getChunkViews('chunk_1_0_0')[dIdx];
         const sumRow1_C1 = Array.from({ length: pNx }).reduce((acc, _, i) => acc + chunk1[1 * pNx + i], 0);
         console.log(`Final Chunk1 Row 1 Heat Sum = ${sumRow1_C1}`);
 

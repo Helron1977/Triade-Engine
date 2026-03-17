@@ -1,6 +1,6 @@
 import { HypercubeNeoFactory } from '../core/HypercubeNeoFactory';
 import { CanvasAdapterNeo } from '../io/CanvasAdapterNeo';
-import { BenchmarkHUD } from '../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../io/BenchmarkHUD';
 
 // Leaflet Global
 declare const L: any;
@@ -75,8 +75,8 @@ function injectVoronoiSeeds(engine: any, faceBaseName: string, pois: POI[]) {
                 chunkDataY[dstRowOffset + lx] = initialSeedY[srcRowOffset + worldX];
             }
         }
-        engine.mBuffer.setFaceData(chunk.id, `${faceBaseName}_x`, chunkDataX);
-        engine.mBuffer.setFaceData(chunk.id, `${faceBaseName}_y`, chunkDataY);
+        engine.bridge.setFaceData(chunk.id, `${faceBaseName}_x`, chunkDataX);
+        engine.bridge.setFaceData(chunk.id, `${faceBaseName}_y`, chunkDataY);
     }
 }
 
@@ -219,7 +219,7 @@ async function bootSDF() {
                 chunkData[ly * nxPhys + lx] = obstaclesData[wY * SIZE + wX];
             }
         }
-        engine.mBuffer.setFaceData(chunk.id, 'obstacles', chunkData);
+        engine.bridge.setFaceData(chunk.id, 'obstacles', chunkData);
     }
 
     // Inject exact POI coordinates
@@ -228,7 +228,7 @@ async function bootSDF() {
     }
 
     // Synchronize to populate ghost cells
-    (engine as any).synchronizer.syncAll(engine.vGrid, engine.mBuffer, engine.parityManager, 'read');
+    (engine as any).synchronizer.syncAll(engine.vGrid, engine.bridge, engine.parityManager, 'read');
 
     // === SDF BAKE ALGORITHM (Eikonal / Dilation) ===
     // Since we rely on 1-cell ghost overlap between chunks for O(1) multi-chunk scaling, 
@@ -254,7 +254,7 @@ async function bootSDF() {
                 // Advance physics engine by 1 tick (1-pixel dilation)
                 await (engine as any).step(1);
                 // Synchronize ghost cells using boundary orchestrator
-                (engine as any).synchronizer.syncAll(engine.vGrid, engine.mBuffer, engine.parityManager, 'read');
+                (engine as any).synchronizer.syncAll(engine.vGrid, engine.bridge, engine.parityManager, 'read');
             }
 
             // Yield to UI Thread

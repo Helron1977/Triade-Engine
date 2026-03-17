@@ -1,7 +1,7 @@
 import { HypercubeNeoFactory } from '../../core/HypercubeNeoFactory';
 import { NacaHelper } from '../../helpers/ShapeHelpers';
 import { HypercubeNeo } from '../../HypercubeNeo';
-import { BenchmarkHUD } from '../../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../../io/BenchmarkHUD';
 
 /**
  * Neo Aero (CPU) Orchestrator

@@ -1,74 +1,108 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme, HypercubeConfig } from '../types';
-import { VirtualChunk } from '../GridAbstractions';
+import { NumericalScheme } from '../types';
+import { VirtualChunk } from '../topology/GridAbstractions';
+import { KernelBinder } from './KernelBinder';
+import { ComputeContext } from './ComputeContext';
 
+/**
+ * NeoHeatmapKernel
+ * Implementation of 2D Heat Diffusion.
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
+ */
 export class NeoHeatmapKernel implements IKernel {
     public static readonly DEFAULT_DIFFUSION = 0.25;
     public static readonly DEFAULT_DECAY = 0.99;
 
-    execute(
-        views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: HypercubeConfig,
-        chunk: VirtualChunk
-    ): void {
-        const nx = chunk.localDimensions.nx;
-        const ny = chunk.localDimensions.ny;
-        const padding = gridConfig.padding ?? 1;
-
-        let maxNx = 0;
-        let maxNy = 0;
-        if ((gridConfig as any).maxDimensions) {
-            maxNx = (gridConfig as any).maxDimensions.nx;
-            maxNy = (gridConfig as any).maxDimensions.ny;
-        } else {
-            maxNx = Math.ceil(gridConfig.dimensions.nx / gridConfig.chunks.x);
-            maxNy = Math.ceil(gridConfig.dimensions.ny / gridConfig.chunks.y);
+    public readonly metadata = {
+        roles: {
+            source: 'temp',
+            destination: 'temp',
+            obstacles: 'obstacles',
+            auxiliary: ['injection']
         }
-        const pNx = maxNx + 2 * padding;
-        const pNy = maxNy + 2 * padding;
+    };
 
-        const dt = scheme.params?.diffusion_rate ?? NeoHeatmapKernel.DEFAULT_DIFFUSION;
-        const decay = scheme.params?.decay_factor ?? NeoHeatmapKernel.DEFAULT_DECAY;
+    public execute(
+        views: Float32Array[],
+        context: ComputeContext
+    ): void {
+        const { nx, ny, padding, pNx, scheme, indices, gridConfig, chunk } = context;
 
-        const uRead = views[indices[scheme.source].read];
-        const uWrite = views[indices[scheme.source].write];
-        
-        // Fix: Do not fallback obstacles to uRead, as it would treat data as walls!
-        const obstacles = indices['obstacles'] ? views[indices['obstacles'].read] : null;
-        const injectionFaceName = scheme.params?.injection_face ?? 'injection_mask';
-        const injection = indices[injectionFaceName] ? views[indices[injectionFaceName].read] : null;
+        const diffusionRate = (scheme.params?.diffusion_rate as number) || NeoHeatmapKernel.DEFAULT_DIFFUSION;
+        const decayFactor = (scheme.params?.decay_factor as number) || NeoHeatmapKernel.DEFAULT_DECAY;
+
+        // Resolve views via Binder (Nuclear Refactor Priority 2)
+        const bound = KernelBinder.bind(this, scheme, views, indices);
+        const uRead = bound.source.read;
+        const uWrite = bound.destination.write;
+        const obstacles = bound.obstacles;
+        const injection = bound.auxiliary[0]?.read || null;
 
         for (let py = padding; py < ny + padding; py++) {
             for (let px = padding; px < nx + padding; px++) {
                 const i = py * pNx + px;
 
                 // 1. Is it a Wall?
-                if (obstacles && obstacles[i] > 0.5) {
+                let isWall = (obstacles && obstacles[i] > 0.5);
+                let injectionValue = (injection && injection[i] > 0) ? injection[i] : -1.0;
+
+                // Dynamic objects support (matches GPU behavior)
+                if (gridConfig.objects && gridConfig.objects.length > 0) {
+                    let worldX0 = 0;
+                    let worldY0 = 0;
+                    const chunksList = context.params.chunksList;
+                    if (chunksList) {
+                        for (const c of chunksList) {
+                            if (c.y === chunk.y && c.z === chunk.z && c.x < chunk.x) worldX0 += c.localDimensions.nx;
+                            if (c.x === chunk.x && c.z === chunk.z && c.y < chunk.y) worldY0 += c.localDimensions.ny;
+                        }
+                    }
+
+                    const worldX = worldX0 + (px - padding);
+                    const worldY = worldY0 + (py - padding);
+
+                    for (const obj of gridConfig.objects) {
+                        if (obj.isBaked === true || obj.renderOnly === true) continue;
+                        
+                        let inObj = false;
+                        if (obj.type === 'circle') {
+                            const r = obj.dimensions.w * 0.5;
+                            const dx = worldX - (obj.position.x + r);
+                            const dy = worldY - (obj.position.y + r);
+                            if (dx*dx + dy*dy <= r*r) inObj = true;
+                        } else if (obj.type === 'rect') {
+                            if (worldX >= obj.position.x && worldX < obj.position.x + obj.dimensions.w &&
+                                worldY >= obj.position.y && worldY < obj.position.y + obj.dimensions.h) {
+                                inObj = true;
+                            }
+                        }
+
+                        if (inObj) {
+                            if (obj.properties.obstacles > 0.5 || obj.properties.isObstacle > 0.5) isWall = true;
+                            const temp = obj.properties.temp ?? obj.properties.temperature;
+                            if (temp !== undefined) injectionValue = temp;
+                        }
+                    }
+                }
+
+                if (isWall) {
                     uWrite[i] = 0;
                     continue;
                 }
 
-                // 2. Continuous Injection (Radiators)
-                if (injection && injection[i] > 0) {
-                    uWrite[i] = injection[i]; // Thermostat override
+                if (injectionValue >= 0) {
+                    uWrite[i] = injectionValue;
                     continue;
                 }
 
-                // 3. Diffusion from Neighbors (Laplacian Stencil)
-                // Harmonized with GPU: We don't skip obstacles, allowing heat to diffuse INTO them (eraser effect)
+                // 2. Diffusion (Laplacian Operator)
+                const center = uRead[i];
                 const laplacian = (
-                    uRead[i - pNx] + uRead[i + pNx] + uRead[i + 1] + uRead[i - 1]
-                ) - 4 * uRead[i];
-                
-                const uc = uRead[i] as number;
-                let newU = uc + (dt as number) * laplacian;
+                    uRead[i - 1] + uRead[i + 1] +
+                    uRead[i - pNx] + uRead[i + pNx]
+                ) - 4 * center;
 
-                // 4. Thermodynamic Decay
-                newU *= (decay as number);
-
-                uWrite[i] = Math.max(0, newU);
+                uWrite[i] = (center + diffusionRate * laplacian) * decayFactor;
             }
         }
     }

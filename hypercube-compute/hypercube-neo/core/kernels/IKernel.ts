@@ -1,24 +1,32 @@
 import { NumericalScheme } from '../types';
-import { VirtualChunk } from '../GridAbstractions';
+import { VirtualChunk } from '../topology/GridAbstractions';
+import { ComputeContext } from './ComputeContext';
 
 /**
- * Interface for a numerical operator (Kernel).
- * A kernel handles a specific type of computation (e.g., Diffusion, Advection).
+ * Metadata defining the data roles required by a kernel.
+ */
+export interface KernelMetadata {
+    roles: {
+        source: string;
+        destination: string;
+        obstacles?: string;
+        auxiliary?: string[];
+    };
+}
+
+/**
+ * Interface for all Hypercube Neo physics kernels.
  */
 export interface IKernel {
+    readonly metadata: KernelMetadata;
+
     /**
-     * Executes the numerical operation on a set of physical views.
-     * @param views Raw Float32Arrays for the chunk.
-     * @param scheme The declarative scheme from the engine descriptor.
-     * @param indices Mapping of face names to their current read/write indices.
-     * @param gridConfig Global configuration (nx, ny, etc.)
-     * @param chunk The virtual chunk being processed.
+     * Executes the kernel logic for a specific chunk and scheme.
+     * @param views Raw face views from MasterBuffer.
+     * @param context Immutable context containing all runtime parameters.
      */
     execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void;
 }

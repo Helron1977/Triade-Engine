@@ -1,4 +1,5 @@
-import { IVirtualGrid, IMasterBuffer, IBoundarySynchronizer, IRasterizer } from './topology/GridAbstractions';
+import { IVirtualGrid, IBoundarySynchronizer, IRasterizer } from './topology/GridAbstractions';
+import { IBufferBridge } from './IBufferBridge';
 import { ObjectRasterizer } from './ObjectRasterizer';
 import { BoundarySynchronizer } from './topology/BoundarySynchronizer';
 import { ParityManager } from './ParityManager';
@@ -11,7 +12,7 @@ import { IDispatcher } from './IDispatcher';
 export class NeoEngineProxy {
     constructor(
         public readonly vGrid: IVirtualGrid,
-        public readonly mBuffer: IMasterBuffer,
+        public readonly bridge: IBufferBridge,
         public readonly parityManager: ParityManager,
         public readonly rasterizer: IRasterizer,
         public readonly synchronizer: IBoundarySynchronizer,
@@ -23,19 +24,17 @@ export class NeoEngineProxy {
      */
     public async init(): Promise<void> {
         // Essential: Initialize LBM fluid to equilibrium to avoid NaN from zero-ghost-cells
-        this.mBuffer.initializeEquilibrium();
+        this.bridge.initializeEquilibrium();
 
         // Run initial rasterization for all chunks (Target 'read' buffer for initialization)
         for (const chunk of this.vGrid.chunks) {
-            this.rasterizer.rasterizeChunk(chunk, this.vGrid, this.mBuffer, 0, 'read');
+            this.rasterizer.rasterizeChunk(chunk, this.vGrid, this.bridge, 0, 'read');
         }
         // First sync for ghost cells
-        this.synchronizer.syncAll(this.vGrid, this.mBuffer, this.parityManager, 'read');
+        this.synchronizer.syncAll(this.vGrid, this.bridge, this.parityManager, 'read');
 
         // Upload to GPU if needed
-        if (this.mBuffer.gpuBuffer) {
-            this.mBuffer.syncToDevice();
-        }
+        this.bridge.syncToDevice();
     }
 
     /**
@@ -66,24 +65,22 @@ export class NeoEngineProxy {
         if (!isGpu) {
             // 2. Rasterize VirtualObjects into the grid (Injection: Write)
             for (const chunk of this.vGrid.chunks) {
-                this.rasterizer.rasterizeChunk(chunk, this.vGrid, this.mBuffer, t);
+                this.rasterizer.rasterizeChunk(chunk, this.vGrid, this.bridge, t);
             }
 
             // 3. Synchronize boundaries
-            this.synchronizer.syncAll(this.vGrid, this.mBuffer, this.parityManager, 'write');
+            this.synchronizer.syncAll(this.vGrid, this.bridge, this.parityManager, 'write');
 
             // 4. Sync CPU -> GPU (Essential for rasterization/sync to be visible on GPU)
-            if (this.mBuffer.gpuBuffer) {
-                this.mBuffer.syncToDevice();
-            }
+            this.bridge.syncToDevice();
         } else {
             // GPU Initial Sync (Essential for seed injection from CPU)
-            if (this.parityManager.currentTick === 0 && this.mBuffer.gpuBuffer) {
-                await this.mBuffer.syncToDevice();
+            if (this.parityManager.currentTick === 0) {
+                await this.bridge.syncToDevice();
             }
 
             // In GPU mode, we still NEED boundary sync for multi-chunk grids
-            this.synchronizer.syncAll(this.vGrid, this.mBuffer, this.parityManager, 'write');
+            this.synchronizer.syncAll(this.vGrid, this.bridge, this.parityManager, 'write');
         }
 
         // 5. Increment the simulation parity

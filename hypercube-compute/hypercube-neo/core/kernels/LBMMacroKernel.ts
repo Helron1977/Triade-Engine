@@ -1,5 +1,5 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme } from '../types';
+import { ComputeContext } from './ComputeContext';
 
 /**
  * LBMMacroKernel
@@ -7,32 +7,32 @@ import { NumericalScheme } from '../types';
  * - Density (rho)
  * - Velocity (vx, vy)
  * - Vorticity (curl)
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class LBMMacroKernel implements IKernel {
+    public readonly metadata = {
+        roles: {
+            source: 'f0',
+            destination: 'density',
+            auxiliary: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'vx', 'vy', 'vorticity']
+        }
+    };
+
     private readonly cx = [0, 1, 0, -1, 0, 1, -1, -1, 1];
     private readonly cy = [0, 0, 1, 0, -1, 1, 1, -1, -1];
 
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any
+        context: ComputeContext
     ): void {
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = gridConfig.padding ?? 1;
-        const pNx = nx + 2 * padding;
+        const { nx, ny, padding, pNx, indices } = context;
 
         const fIdxs = [
             indices['f0'], indices['f1'], indices['f2'], indices['f3'], indices['f4'],
             indices['f5'], indices['f6'], indices['f7'], indices['f8']
         ];
 
-        // LBM populations should be read from the NEWLY UPDATED write buffer 
-        // if this kernel runs after LBMKernel in the same step.
-        // Actually, NumericalDispatcher always prepares indices.
-        // If they are ping-pong, indices.write is the evolved state.
-
+        // LBM populations are read from the write buffer (evolved state)
         const f_in = fIdxs.map(idx => views[idx.write]);
 
         const rhoFace = indices['density']?.write;

@@ -14,6 +14,9 @@ import { initializeKernels } from './kernels/KernelInitializer';
 import { initializeGpuKernels } from './kernels/GpuKernelInitializer';
 import { GpuDispatcher } from './GpuDispatcher';
 import { GpuBoundarySynchronizer } from './topology/GpuBoundarySynchronizer';
+import { CpuBufferBridge } from './CpuBufferBridge';
+import { GpuBufferBridge } from './GpuBufferBridge';
+import { IBufferBridge } from './IBufferBridge';
 
 // Auto-register default kernels
 initializeKernels();
@@ -49,45 +52,34 @@ export class HypercubeNeoFactory implements IFactory {
     /**
      * Build the full Neo stack and return an orchestration proxy.
      * Respects the 'mode' (cpu/gpu) defined in the configuration.
+     * @throws {Error} If manifest validation fails or initialization occurs out of order.
      */
     public async build(config: HypercubeConfig, descriptor: EngineDescriptor): Promise<NeoEngineProxy> {
-        // 0. Manifest Integrity Check
         this.validateManifest(config, descriptor);
 
         console.log(`Factory: Building engine in ${config.mode.toUpperCase()} mode...`);
 
-        // 1. Domain Decomposition (Virtual Layout)
+        // 1. Virtual & Physical Layout
         const vGrid = this.createVirtualGrid(config, descriptor);
-
-        // 2. GPU Initialization (if needed)
+        
         if (config.mode === 'gpu') {
             await HypercubeGPUContext.init();
         }
 
-        // 3. Memory Allocation (Physical Layout)
         const mBuffer = new MasterBuffer(vGrid);
-
-        // 4. Parity Management
         const parityManager = new ParityManager(vGrid.dataContract);
 
-        // 5. Orchestration Layer
-        const rasterizer = new ObjectRasterizer(parityManager);
-        let synchronizer: IBoundarySynchronizer;
-        let dispatcher: IDispatcher;
+        // 2. Abstraction Layer (Bridge)
+        const bridge = this.createBridge(config, mBuffer);
 
-        if (config.mode === 'gpu') {
-            synchronizer = new GpuBoundarySynchronizer();
-            dispatcher = new GpuDispatcher(vGrid, mBuffer, parityManager);
-        } else {
-            synchronizer = new BoundarySynchronizer();
-            dispatcher = config.executionMode === 'parallel'
-                ? new (await import('./ParallelDispatcher')).ParallelDispatcher(vGrid, mBuffer, parityManager)
-                : new (await import('./NumericalDispatcher')).NumericalDispatcher(vGrid, mBuffer, parityManager);
-        }
+        // 3. Orchestration Components
+        const rasterizer = new ObjectRasterizer(parityManager);
+        const synchronizer = this.createSynchronizer(config);
+        const dispatcher = await this.createDispatcher(config, vGrid, bridge, parityManager);
 
         const engine = new NeoEngineProxy(
             vGrid,
-            mBuffer,
+            bridge,
             parityManager,
             rasterizer,
             synchronizer,
@@ -96,6 +88,46 @@ export class HypercubeNeoFactory implements IFactory {
 
         await engine.init();
         return engine;
+    }
+
+    /**
+     * Creates the appropriate memory bridge based on the execution mode.
+     */
+    private createBridge(config: HypercubeConfig, mBuffer: MasterBuffer): IBufferBridge {
+        return config.mode === 'gpu' 
+            ? new GpuBufferBridge(mBuffer) 
+            : new CpuBufferBridge(mBuffer);
+    }
+
+    /**
+     * Creates the appropriate topological synchronizer.
+     */
+    private createSynchronizer(config: HypercubeConfig): IBoundarySynchronizer {
+        return config.mode === 'gpu'
+            ? new GpuBoundarySynchronizer()
+            : new BoundarySynchronizer();
+    }
+
+    /**
+     * Creates the appropriate numerical dispatcher (async for dynamic imports).
+     */
+    private async createDispatcher(
+        config: HypercubeConfig, 
+        vGrid: VirtualGrid, 
+        bridge: IBufferBridge, 
+        parityManager: ParityManager
+    ): Promise<IDispatcher> {
+        if (config.mode === 'gpu') {
+            return new GpuDispatcher(vGrid, bridge as GpuBufferBridge, parityManager);
+        }
+
+        if (config.executionMode === 'parallel') {
+            const { ParallelDispatcher } = await import('./ParallelDispatcher');
+            return new ParallelDispatcher(vGrid, bridge, parityManager);
+        }
+
+        const { NumericalDispatcher } = await import('./NumericalDispatcher');
+        return new NumericalDispatcher(vGrid, bridge, parityManager);
     }
 
     /**

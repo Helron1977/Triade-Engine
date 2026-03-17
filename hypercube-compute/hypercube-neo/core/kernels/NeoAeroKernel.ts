@@ -2,6 +2,8 @@ import { IKernel } from './IKernel';
 import { NumericalScheme } from '../types';
 import { VirtualChunk } from '../topology/GridAbstractions';
 import { TopologyResolver, BoundaryRoleID } from '../topology/TopologyResolver';
+import { KernelBinder } from './KernelBinder';
+import { ComputeContext } from './ComputeContext';
 
 /**
  * NeoAeroKernel
@@ -14,49 +16,47 @@ export class NeoAeroKernel implements IKernel {
 
     private topoResolver = new TopologyResolver();
 
+    public readonly metadata = {
+        roles: {
+            source: 'f0',
+            destination: 'f0',
+            obstacles: 'obstacles',
+            auxiliary: [
+                'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8',
+                'vx', 'vy', 'vorticity', 'smoke'
+            ]
+        }
+    };
+
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
-        const nx = chunk.localDimensions.nx;
-        const ny = chunk.localDimensions.ny;
-        const padding = gridConfig.padding ?? 1;
-
-        // The stride (pNx) is based on the grid's MAX dimensions managed by MasterBuffer
-        let maxNx = 0;
-        let maxNy = 0;
-        if (gridConfig.maxDimensions) {
-            maxNx = gridConfig.maxDimensions.nx;
-            maxNy = gridConfig.maxDimensions.ny;
-        } else {
-            // Fallback for standalone tests or if not provided
-            maxNx = Math.ceil(gridConfig.dimensions.nx / gridConfig.chunks.x);
-            maxNy = Math.ceil(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        }
-        const pNx = maxNx + 2 * padding;
-        const pNy = maxNy + 2 * padding;
+        const { nx, ny, padding, pNx, pNy, scheme, indices, chunk, gridConfig } = context;
 
         const omega = (scheme.params?.omega as number) || NeoAeroKernel.DEFAULT_OMEGA;
         const om_1 = 1.0 - omega;
 
-        const f0_in = views[indices['f0'].read], f1_in = views[indices['f1'].read], f2_in = views[indices['f2'].read];
-        const f3_in = views[indices['f3'].read], f4_in = views[indices['f4'].read], f5_in = views[indices['f5'].read];
-        const f6_in = views[indices['f6'].read], f7_in = views[indices['f7'].read], f8_in = views[indices['f8'].read];
+        // Resolve views via Binder (Nuclear Refactor Priority 2)
+        const bound = KernelBinder.bind(this, scheme, views, indices);
 
-        const f0_out = views[indices['f0'].write], f1_out = views[indices['f1'].write], f2_out = views[indices['f2'].write];
-        const f3_out = views[indices['f3'].write], f4_out = views[indices['f4'].write], f5_out = views[indices['f5'].write];
-        const f6_out = views[indices['f6'].write], f7_out = views[indices['f7'].write], f8_out = views[indices['f8'].write];
+        const f0_in = bound.source.read;
+        const f0_out = bound.destination.write;
+        const obstacles = bound.obstacles!; // Aero requires obstacles
 
-        const obstacles = views[indices['obstacles'].read];
-        const ux_in = views[indices['vx'].read], uy_in = views[indices['vy'].read];
-        const ux_out = views[indices['vx'].write];
-        const uy_out = views[indices['vy'].write];
-        const curl_out = views[indices['vorticity'].write];
-        const smoke_in = views[indices['smoke'].read];
-        const smoke_out = views[indices['smoke'].write];
+        const f1_in = bound.auxiliary[0]!.read, f1_out = bound.auxiliary[0]!.write;
+        const f2_in = bound.auxiliary[1]!.read, f2_out = bound.auxiliary[1]!.write;
+        const f3_in = bound.auxiliary[2]!.read, f3_out = bound.auxiliary[2]!.write;
+        const f4_in = bound.auxiliary[3]!.read, f4_out = bound.auxiliary[3]!.write;
+        const f5_in = bound.auxiliary[4]!.read, f5_out = bound.auxiliary[4]!.write;
+        const f6_in = bound.auxiliary[5]!.read, f6_out = bound.auxiliary[5]!.write;
+        const f7_in = bound.auxiliary[6]!.read, f7_out = bound.auxiliary[6]!.write;
+        const f8_in = bound.auxiliary[7]!.read, f8_out = bound.auxiliary[7]!.write;
+
+        const ux_in = bound.auxiliary[8]!.read, ux_out = bound.auxiliary[8]!.write;
+        const uy_in = bound.auxiliary[9]!.read, uy_out = bound.auxiliary[9]!.write;
+        const curl_out = bound.auxiliary[10]!.write;
+        const smoke_in = bound.auxiliary[11]!.read, smoke_out = bound.auxiliary[11]!.write;
 
         // Resolve topology roles for this chunk
         const topo = this.topoResolver.resolve(chunk, gridConfig.chunks, gridConfig.boundaries);

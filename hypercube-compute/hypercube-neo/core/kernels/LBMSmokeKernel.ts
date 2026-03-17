@@ -1,26 +1,30 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme } from '../types';
+import { ComputeContext } from './ComputeContext';
 
 /**
  * LBMSmokeKernel
  * Advects a passive scalar (smoke) using the macroscopic velocity field.
  * Includes slight diffusion and dissipation for visual stability.
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class LBMSmokeKernel implements IKernel {
+    public readonly metadata = {
+        roles: {
+            source: 'smoke',
+            destination: 'smoke',
+            auxiliary: ['vx', 'vy']
+        }
+    };
+
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any
+        context: ComputeContext
     ): void {
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = gridConfig.padding ?? 1;
-        const pNx = nx + 2 * padding;
+        const { nx, ny, padding, pNx, scheme, indices } = context;
 
         const smokeInIdx = indices['smoke'].read;
         const smokeOutIdx = indices['smoke'].write;
-        const vxIdx = indices['vx'].write; // Use the updated velocity
+        const vxIdx = indices['vx'].write; // Use the evolved velocity
         const vyIdx = indices['vy'].write;
 
         const sIn = views[smokeInIdx];
@@ -53,10 +57,12 @@ export class LBMSmokeKernel implements IKernel {
                 let sample = 0;
                 // Bounds check (including padding)
                 if (x0 >= 0 && x1 < pNx && y0 >= 0 && y1 < (ny + 2 * padding)) {
-                    const v00 = sIn[y0 * pNx + x0];
-                    const v10 = sIn[y0 * pNx + x1];
-                    const v01 = sIn[y1 * pNx + x0];
-                    const v11 = sIn[y1 * pNx + x1];
+                    const row0 = y0 * pNx;
+                    const row1 = y1 * pNx;
+                    const v00 = sIn[row0 + x0];
+                    const v10 = sIn[row0 + x1];
+                    const v01 = sIn[row1 + x0];
+                    const v11 = sIn[row1 + x1];
                     sample = (v00 * (1 - fx) + v10 * fx) * (1 - fy) + (v01 * (1 - fx) + v11 * fx) * fy;
                 }
 

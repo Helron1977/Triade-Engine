@@ -42,7 +42,10 @@ describe('Hypercube Neo: Math SDF Kernels', () => {
             joints: []
         };
 
-        kernel.execute(views, scheme, indices, config, chunk);
+        kernel.execute(views, {
+            nx: 8, ny: 8, pNx, pNy, padding: 1,
+            scheme, indices, gridConfig: config, chunk, params: {}
+        } as any);
 
         // Best seed at (4,4) should be (3,3)
         expect(sdfX[4 * pNx + 4]).toBe(3);

@@ -19,13 +19,11 @@ function createMockProxy() {
                 }
             }
         },
-        mBuffer: {
-            getChunkViews: () => ({
-                faces: [
-                    new Float32Array(18 * 18).fill(0.5), // temperature (nx+2 * ny+2)
-                    new Float32Array(18 * 18).fill(0)    // obstacles
-                ]
-            })
+        bridge: {
+            getChunkViews: () => [
+                new Float32Array(18 * 18).fill(0.5), // temperature (nx+2 * ny+2)
+                new Float32Array(18 * 18).fill(0)    // obstacles
+            ]
         },
         parityManager: {
             getFaceIndices: (name: string) => ({ read: name === 'temperature' ? 0 : 1, write: name === 'temperature' ? 0 : 1 })

@@ -1,20 +1,26 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme } from '../types';
-import { VirtualChunk } from '../GridAbstractions';
+import { ComputeContext } from './ComputeContext';
 
 /**
  * Kernel for Explicit Diffusion (Explicit Euler).
  * Solves: dc/dt = alpha * Laplacian(c)
  * Features finite-value protection and numerical damping.
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class DiffusionKernel implements IKernel {
+    public readonly metadata = {
+        roles: {
+            source: 'any',
+            destination: 'any'
+        }
+    };
+
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
+        const { nx, ny, padding, pNx, scheme, indices } = context;
+
         const sourceFace = scheme.source;
         const destFace = scheme.destination || sourceFace;
 
@@ -24,11 +30,6 @@ export class DiffusionKernel implements IKernel {
         const src = views[srcIdx];
         const dst = views[dstIdx];
 
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = 1;
-
-        const pNx = nx + 2 * padding;
         const alpha = (scheme.params?.alpha as number) || 0.1;
 
         for (let py = padding; py < ny + padding; py++) {

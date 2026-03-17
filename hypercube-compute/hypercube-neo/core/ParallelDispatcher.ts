@@ -1,5 +1,6 @@
 import { IDispatcher } from './IDispatcher';
-import { IVirtualGrid, IMasterBuffer } from './topology/GridAbstractions';
+import { IVirtualGrid } from './topology/GridAbstractions';
+import { IBufferBridge } from './IBufferBridge';
 import { ParityManager } from './ParityManager';
 import { DataContract } from './DataContract';
 
@@ -8,18 +9,17 @@ import { DataContract } from './DataContract';
  */
 export class ParallelDispatcher implements IDispatcher {
     private workers: Worker[] = [];
-    private workerScript: string = './neo.worker.js'; // Default for Vite or custom build
+    private initPromises: Promise<void>[] = [];
+    private chunkResolvers: Map<string, () => void> = new Map();
 
     constructor(
         private vGrid: IVirtualGrid,
-        private mBuffer: IMasterBuffer,
+        private bridge: IBufferBridge,
         private parityManager: ParityManager
     ) {
         this.initWorkers();
     }
 
-    private initPromises: Promise<void>[] = [];
-    private chunkResolvers: Map<string, () => void> = new Map();
 
     private initWorkers() {
         const numWorkers = Math.min(this.vGrid.chunks.length, navigator.hardwareConcurrency || 4);
@@ -46,7 +46,7 @@ export class ParallelDispatcher implements IDispatcher {
 
             worker.postMessage({
                 type: 'INIT',
-                payload: { sharedBuffer: this.mBuffer.rawBuffer }
+                payload: { sharedBuffer: this.bridge.rawBuffer }
             });
 
             this.workers.push(worker);
@@ -54,6 +54,7 @@ export class ParallelDispatcher implements IDispatcher {
     }
 
     public async dispatch(t: number): Promise<void> {
+        // Initialization Barrier: Ensure all workers have received the SharedArrayBuffer
         await Promise.all(this.initPromises);
 
         const grid = this.vGrid as any;
@@ -65,21 +66,29 @@ export class ParallelDispatcher implements IDispatcher {
             faceIndices[face.name] = this.parityManager.getFaceIndices(face.name);
         }
 
-        const kernelParams = {
-            dimensions: this.vGrid.dimensions,
-            chunks: this.vGrid.chunkLayout,
-            boundaries: grid.config?.boundaries,
+        // Pre-compute uniform parameters once for all chunks
+        let maxNx = 0, maxNy = 0;
+        for (const chunk of this.vGrid.chunks) {
+            maxNx = Math.max(maxNx, chunk.localDimensions.nx);
+            maxNy = Math.max(maxNy, chunk.localDimensions.ny);
+        }
+        const padding = descriptor.requirements.ghostCells;
+        const pNx = maxNx + 2 * padding;
+        const pNy = maxNy + 2 * padding;
+
+        const globalParams = {
             time: t,
-            tick: this.parityManager.currentTick
+            tick: this.parityManager.currentTick,
+            objects: grid.config?.objects,
+            chunksList: this.vGrid.chunks
         };
 
         // 2. Parallel Dispatch
         const chunkExecutions = this.vGrid.chunks.map((vChunk, idx) => {
             const worker = this.workers[idx % this.workers.length];
-            const pViews = this.mBuffer.getChunkViews(vChunk.id).faces;
+            const pViews = this.bridge.getChunkViews(vChunk.id);
 
-            // Handle persistence locally (Main Thread) before worker starts
-            // This ensures workers always start with consistent cross-buffer state if needed
+            // Consistency Copy (Main Thread)
             for (const face of descriptor.faces) {
                 const indices = faceIndices[face.name];
                 if (indices.write !== indices.read && face.isPersistent !== false) {
@@ -87,21 +96,22 @@ export class ParallelDispatcher implements IDispatcher {
                 }
             }
 
-            // Extract view metadata for worker (Byte offset and length)
             const viewsData = pViews.map(v => ({ offset: v.byteOffset, length: v.length }));
 
             return new Promise<void>((resolve) => {
                 this.chunkResolvers.set(vChunk.id, resolve);
 
-                // For now, we only push the FIRST rule to keep it simple and high-performance
-                // (Most aero sims only have 1 main rule)
                 worker.postMessage({
                     type: 'COMPUTE',
                     payload: {
                         chunk: vChunk,
                         schemes: descriptor.rules,
                         indices: faceIndices,
-                        params: kernelParams,
+                        contextProps: {
+                            pNx, pNy, padding,
+                            params: globalParams,
+                            gridConfig: grid.config
+                        },
                         viewsData
                     }
                 });

@@ -1,4 +1,5 @@
-import { IBoundarySynchronizer, IMasterBuffer, IVirtualGrid, VirtualChunk } from './GridAbstractions';
+import { IBoundarySynchronizer, IVirtualGrid, VirtualChunk } from './GridAbstractions';
+import { IBufferBridge } from '../IBufferBridge';
 import { DataContract } from '../DataContract';
 import { ParityManager } from '../ParityManager';
 
@@ -8,7 +9,7 @@ import { ParityManager } from '../ParityManager';
  */
 export class BoundarySynchronizer implements IBoundarySynchronizer {
 
-    syncAll(vGrid: IVirtualGrid, mBuffer: IMasterBuffer, parityManager?: ParityManager, mode: 'read' | 'write' = 'write'): void {
+    syncAll(vGrid: IVirtualGrid, bridge: IBufferBridge, parityManager?: ParityManager, mode: 'read' | 'write' = 'write'): void {
         const grid = vGrid as any;
         const dataContract = grid.dataContract as DataContract;
         const descriptor = dataContract.descriptor;
@@ -40,19 +41,19 @@ export class BoundarySynchronizer implements IBoundarySynchronizer {
         const pNy = maxNy + 2 * padding;
 
         for (const chunk of vGrid.chunks) {
-            this.syncChunkBoundaries(chunk, vGrid, mBuffer, syncIndices, pNx, pNy, padding);
+            this.syncChunkBoundaries(chunk, vGrid, bridge, syncIndices, pNx, pNy, padding);
         }
     }
 
     private syncChunkBoundaries(
         chunk: VirtualChunk,
         vGrid: IVirtualGrid,
-        mBuffer: IMasterBuffer,
+        bridge: IBufferBridge,
         syncIndices: number[],
         pNx: number, pNy: number,
         padding: number
     ) {
-        const views = mBuffer.getChunkViews(chunk.id);
+        const views = bridge.getChunkViews(chunk.id);
         const nx = chunk.localDimensions.nx;
         const ny = chunk.localDimensions.ny;
 
@@ -62,14 +63,14 @@ export class BoundarySynchronizer implements IBoundarySynchronizer {
             const neighbor = vGrid.chunks.find(c => c.id === joint.neighborId);
             if (!neighbor) continue;
 
-            const neighborViews = mBuffer.getChunkViews(joint.neighborId);
+            const neighborViews = bridge.getChunkViews(joint.neighborId);
             const nNx = neighbor.localDimensions.nx;
             const nNy = neighbor.localDimensions.ny;
 
             for (const bufIdx of syncIndices) {
                 this.transferFace(
-                    views.faces[bufIdx], 
-                    neighborViews.faces[bufIdx], 
+                    views[bufIdx], 
+                    neighborViews[bufIdx], 
                     joint.face, 
                     nx, ny, 
                     nNx, nNy,
@@ -79,7 +80,7 @@ export class BoundarySynchronizer implements IBoundarySynchronizer {
         }
 
         // --- CORNER SYNCHRONIZATION ---
-        this.syncCorners2D(chunk, vGrid, mBuffer, syncIndices, pNx, pNy, padding);
+        this.syncCorners2D(chunk, vGrid, bridge, syncIndices, pNx, pNy, padding);
     }
 
     private transferFace(
@@ -117,7 +118,7 @@ export class BoundarySynchronizer implements IBoundarySynchronizer {
     private syncCorners2D(
         chunk: VirtualChunk, 
         vGrid: IVirtualGrid, 
-        mBuffer: IMasterBuffer, 
+        bridge: IBufferBridge, 
         syncIndices: number[], 
         pNx: number, pNy: number, 
         padding: number
@@ -132,15 +133,15 @@ export class BoundarySynchronizer implements IBoundarySynchronizer {
                 const neighbor = vGrid.findChunkAt(chunk.x + dx, chunk.y + dy, chunk.z);
                 if (!neighbor) continue;
 
-                const myViews = mBuffer.getChunkViews(chunk.id);
-                const theirViews = mBuffer.getChunkViews(neighbor.id);
+                const myViews = bridge.getChunkViews(chunk.id);
+                const theirViews = bridge.getChunkViews(neighbor.id);
                 
                 const nNx = neighbor.localDimensions.nx;
                 const nNy = neighbor.localDimensions.ny;
 
                 for (const bufIdx of syncIndices) {
-                    const mine = myViews.faces[bufIdx];
-                    const theirs = theirViews.faces[bufIdx];
+                    const mine = myViews[bufIdx];
+                    const theirs = theirViews[bufIdx];
 
                     const myX = dx === -1 ? 0 : nx + 1;
                     const myY = dy === -1 ? 0 : ny + 1;

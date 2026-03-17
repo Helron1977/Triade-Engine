@@ -1,34 +1,35 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme, HypercubeConfig } from '../types';
-import { VirtualChunk } from '../topology/GridAbstractions';
+import { ComputeContext } from './ComputeContext';
+import { KernelBinder } from './KernelBinder';
 
 /**
  * NeoPathKernel: Wavefront propagation for pathfinding.
  * Similar to Dijkstra or Breadth-First Search on a grid.
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class NeoPathKernel implements IKernel {
-    execute(
+    public readonly metadata = {
+        roles: {
+            source: 'distance',
+            destination: 'distance',
+            obstacles: 'obstacles'
+        }
+    };
+
+    public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: HypercubeConfig,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = 1;
-        const pNx = nx + 2 * padding;
-        const pNy = ny + 2 * padding;
+        const { nx, ny, padding, pNx, scheme, indices } = context;
 
-        const distFace = indices['distance'] || indices[scheme.source] || Object.values(indices)[0];
-        const obsFace = indices['obstacles'];
+        // Resolve views via Binder
+        const bound = KernelBinder.bind(this, scheme, views, indices);
+        const uRead = bound.source.read;
+        const uWrite = bound.destination.write;
+        const obstacles = bound.obstacles;
 
-        const uRead = views[distFace.read];
-        const uWrite = views[distFace.write];
-        const obstacles = obsFace ? views[obsFace.read] : null;
-
-        for (let py = 1; py < pNy - 1; py++) {
-            for (let px = 1; px < pNx - 1; px++) {
+        for (let py = padding; py < ny + padding; py++) {
+            for (let px = padding; px < nx + padding; px++) {
                 const i = py * pNx + px;
 
                 if (obstacles && obstacles[i] > 0.5) {

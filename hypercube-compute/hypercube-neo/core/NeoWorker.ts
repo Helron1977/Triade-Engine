@@ -2,6 +2,7 @@
 // Note: This script will be bundled or loaded as a Blob/URL in the ParallelDispatcher.
 
 import { KernelRegistry } from './kernels/KernelRegistry';
+import { ComputeContext } from './kernels/ComputeContext';
 import { initializeKernels } from './kernels/KernelInitializer';
 
 // Initialize kernels in worker context
@@ -22,7 +23,7 @@ self.onmessage = async (e: MessageEvent) => {
 
         case 'COMPUTE':
             if (!sharedBuffer) return;
-            const { chunk, schemes, indices, params, viewsData } = payload;
+            const { chunk, schemes, indices, contextProps, viewsData } = payload;
 
             // Reconstruct views from SharedArrayBuffer offsets
             const physicalViews = viewsData.map((v: any) => new Float32Array(sharedBuffer!, v.offset, v.length));
@@ -31,15 +32,20 @@ self.onmessage = async (e: MessageEvent) => {
                 for (const scheme of schemes) {
                     const kernel = KernelRegistry.get(scheme.type);
                     if (kernel) {
-                        kernel.execute(physicalViews, scheme, indices, params, chunk);
+                        const context: ComputeContext = {
+                            nx: chunk.localDimensions.nx,
+                            ny: chunk.localDimensions.ny,
+                            pNx: contextProps.pNx,
+                            pNy: contextProps.pNy,
+                            padding: contextProps.padding,
+                            scheme,
+                            indices,
+                            params: contextProps.params,
+                            chunk,
+                            gridConfig: contextProps.gridConfig
+                        };
+                        kernel.execute(physicalViews, context);
                     }
-                }
-            } else {
-                // Fallback for older messages if any
-                const scheme = (payload as any).scheme;
-                const kernel = KernelRegistry.get(scheme.type);
-                if (kernel) {
-                    kernel.execute(physicalViews, scheme, indices, params, chunk);
                 }
             }
 

@@ -1,6 +1,6 @@
 import { HypercubeNeoFactory } from '../core/HypercubeNeoFactory';
 import { CanvasAdapterNeo } from '../io/CanvasAdapterNeo';
-import { BenchmarkHUD } from '../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../io/BenchmarkHUD';
 
 async function main() {
     const resManifest = await fetch('./showcase-heat-cpu.json?v=' + Date.now());
@@ -32,38 +32,28 @@ async function main() {
         const t2 = frame * 0.02 + Math.PI;
         const obsX = 256 + Math.sin(frame * 0.01) * 120;
 
-        // CPU path: objects are rasterized by ObjectRasterizer into the physical buffer.
-        // Property names MUST match face names in the descriptor ('temperature', 'obstacles').
-        (engine.vGrid as any).config.objects = [
-            {
-                id: 'heat_eater',
-                type: 'circle',
-                position: { x: obsX - 25, y: 128 - 25 },
-                dimensions: { w: 50, h: 50 },
-                properties: {
-                    obstacles: 1.0,
-                    temperature: 0.0
-                }
-            },
-            {
-                id: 'source_1',
-                type: 'circle',
-                position: { x: 256 + Math.cos(t1) * 140 - 12, y: 128 + Math.sin(t1 * 1.5) * 80 - 12 },
-                dimensions: { w: 24, h: 24 },
-                properties: {
-                    temperature: 4.0
-                }
-            },
-            {
-                id: 'source_2',
-                type: 'circle',
-                position: { x: 256 + Math.cos(t2) * 100 - 8, y: 128 + Math.sin(t2 * 2.1) * 110 - 8 },
-                dimensions: { w: 16, h: 16 },
-                properties: {
-                    temperature: 3.0
-                }
-            }
-        ];
+        // CPU path: objects are updated in the manifest and rasterized by ObjectRasterizer.
+        const objects = (engine.vGrid as any).config.objects;
+        
+        // 1. Move Heat Eater
+        const heater = objects.find((o: any) => o.id === 'heat_eater');
+        if (heater) {
+            heater.position.x = obsX - 25;
+            heater.position.y = 128 - 25;
+        }
+
+        // 2. Orbit sources
+        const s1 = objects.find((o: any) => o.id === 'source_1');
+        if (s1) {
+            s1.position.x = 256 + Math.cos(t1) * 140 - 12;
+            s1.position.y = 128 + Math.sin(t1 * 1.5) * 80 - 12;
+        }
+
+        const s2 = objects.find((o: any) => o.id === 'source_2');
+        if (s2) {
+            s2.position.x = 256 + Math.cos(t2) * 100 - 8;
+            s2.position.y = 128 + Math.sin(t2 * 2.1) * 110 - 8;
+        }
 
         // Compute step (single iteration per render frame)
         await engine.step(1);

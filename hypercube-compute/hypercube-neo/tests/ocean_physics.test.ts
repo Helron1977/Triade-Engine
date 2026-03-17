@@ -61,7 +61,10 @@ describe('NeoOceanKernel: Boundary Physics', () => {
             boundaries: { all: { role: 'wall' } }
         };
 
-        kernel.execute(fullViews, scheme, indices, gridConfig, chunk);
+        kernel.execute(fullViews, {
+            nx, ny, pNx, pNy, padding: 1,
+            scheme, indices, gridConfig, chunk, params: {}
+        } as any);
 
         // 1. Check Pull-Scheme Bounce Back
         // The wall node's incoming right-moving pop (f1) from the ghost cell 
@@ -93,7 +96,10 @@ describe('NeoOceanKernel: Boundary Physics', () => {
             boundaries: { all: { role: 'periodic' } }
         };
 
-        kernel.execute(views, scheme, indices, gridConfig, chunk);
+        kernel.execute(views, {
+            nx, ny, pNx, pNy, padding: 1,
+            scheme, indices, gridConfig, chunk, params: {}
+        } as any);
 
         // The ghost cell (px=0) should NOT have received the rho value
         const ghostIdx = 2 * pNx + 0;

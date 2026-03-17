@@ -1,6 +1,6 @@
 import { HypercubeNeoFactory } from '../../core/HypercubeNeoFactory';
 import { NacaHelper } from '../../helpers/ShapeHelpers';
-import { BenchmarkHUD } from '../../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../../io/BenchmarkHUD';
 import { WebGpuRendererNeo } from '../../io/WebGpuRendererNeo';
 
 /**
@@ -55,7 +55,7 @@ async function main() {
     const vyFaceIdx    = engine.getFaceLogicalIndex('vy');
 
     // 6. Initialization
-    await (engine as any).mBuffer.syncToDevice();
+    await (engine as any).bridge.syncToDevice();
     let isInitialized = false;
 
     async function loop() {

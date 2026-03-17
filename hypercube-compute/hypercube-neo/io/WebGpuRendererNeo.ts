@@ -265,8 +265,8 @@ export class WebGpuRendererNeo {
         this.initPipelines();
 
         const vGrid = proxy.vGrid;
-        const mBuffer = proxy.mBuffer as NeoMasterBuffer;
-        if (!mBuffer.gpuBuffer) return;
+        const bridge = proxy.bridge;
+        if (!bridge.gpuBuffer) return;
 
         const totalW = vGrid.dimensions.nx;
         const totalH = vGrid.dimensions.ny;
@@ -305,8 +305,8 @@ export class WebGpuRendererNeo {
         }
 
         const u32Data = new Uint32Array(vGrid.chunks.length * (bytesPerChunkAligned / 4));
-        const facesPerChunk = mBuffer.totalSlotsPerChunk;
-        const strideFaceBytes = mBuffer.strideFace * 4;
+        const facesPerChunk = bridge.totalSlotsPerChunk;
+        const strideFaceBytes = bridge.strideFace * 4;
 
         const descriptor = (vGrid as any).dataContract.descriptor;
         const faceMappings = (vGrid as any).dataContract.getFaceMappings();
@@ -351,7 +351,7 @@ export class WebGpuRendererNeo {
 
             u32Data[base + 9] = worldX0;
             u32Data[base + 10] = worldY0;
-            u32Data[base + 11] = mBuffer.strideFace;
+            u32Data[base + 11] = bridge.strideFace;
             u32Data[base + 12] = proxy.parityManager.currentTick % 2; // readParity
             const criteria = options.criteriaSDF || [];
             u32Data[base + 13] = criteria.length;
@@ -393,7 +393,7 @@ export class WebGpuRendererNeo {
                 bg = device.createBindGroup({
                     layout: this.pipeline!.getBindGroupLayout(0),
                     entries: [
-                        { binding: 0, resource: { buffer: mBuffer.gpuBuffer, offset: chunkBufferOffset, size: facesPerChunk * strideFaceBytes } },
+                        { binding: 0, resource: { buffer: bridge.gpuBuffer, offset: chunkBufferOffset, size: facesPerChunk * strideFaceBytes } },
                         { binding: 1, resource: { buffer: this.uniformBuffer!, offset: uniformOffset, size: HypercubeGPUContext.alignToUniform(256) } },
                         { binding: 2, resource: view }
                     ]

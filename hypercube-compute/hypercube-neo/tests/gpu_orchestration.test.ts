@@ -6,10 +6,11 @@ import { GpuDispatcher } from '../core/GpuDispatcher';
 import { EngineDescriptor, HypercubeConfig } from '../core/types';
 import { DataContract } from '../core/DataContract';
 import { HypercubeGPUContext } from '../core/gpu/HypercubeGPUContext';
+import { GpuBufferBridge } from '../core/GpuBufferBridge';
 
 // Mock Global WebGPU Enums for NodeJS test environment
-if (typeof (global as any).GPUBufferUsage === 'undefined') {
-    (global as any).GPUBufferUsage = {
+if (typeof (globalThis as any).GPUBufferUsage === 'undefined') {
+    (globalThis as any).GPUBufferUsage = {
         STORAGE: 0x0040,
         UNIFORM: 0x0010,
         COPY_SRC: 0x0004,
@@ -18,8 +19,8 @@ if (typeof (global as any).GPUBufferUsage === 'undefined') {
         MAP_WRITE: 0x0002
     };
 }
-if (typeof (global as any).GPUMapMode === 'undefined') {
-    (global as any).GPUMapMode = {
+if (typeof (globalThis as any).GPUMapMode === 'undefined') {
+    (globalThis as any).GPUMapMode = {
         READ: 0x0001,
         WRITE: 0x0002
     };
@@ -60,8 +61,9 @@ describe('Hypercube Neo: GPU Orchestration Logic', () => {
     it('should calculate correct chunk offsets in GpuDispatcher', () => {
         const vGrid = new VirtualGrid(config, descriptor);
         const mBuffer = new MasterBuffer(vGrid);
+        const bridge = new GpuBufferBridge(mBuffer);
         const parityManager = new ParityManager(vGrid.dataContract);
-        const dispatcher = new GpuDispatcher(vGrid, mBuffer, parityManager);
+        const dispatcher = new GpuDispatcher(vGrid, bridge, parityManager);
 
         // Access public method for testing bind group params
         const bg0 = dispatcher.getChunkBufferParams(0); // chunk 0

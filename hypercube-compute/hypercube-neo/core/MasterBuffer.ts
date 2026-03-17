@@ -7,9 +7,13 @@ import { HypercubeGPUContext } from './gpu/HypercubeGPUContext';
  * It allocates a single contiguous buffer and creates zero-copy views for each chunk.
  */
 export class MasterBuffer implements IMasterBuffer {
+    /** Raw underlying memory (SharedArrayBuffer for CPU, ArrayBuffer mirror for GPU). */
     public readonly rawBuffer: SharedArrayBuffer | ArrayBuffer;
+    /** Total length of the buffer in bytes. */
     public readonly byteLength: number;
+    /** Number of face slots (including ping-pong) allocated per chunk. */
     public readonly totalSlotsPerChunk: number;
+    /** WebGPU Storage Buffer reference (GPU mode only). */
     public gpuBuffer?: GPUBuffer;
     public strideFace: number = 0; // Number of float32 elements per face (including alignment padding)
     private chunkViews: Map<string, IPhysicalChunk> = new Map();
@@ -149,14 +153,17 @@ export class MasterBuffer implements IMasterBuffer {
 
     /**
      * Copy data from the CPU ArrayBuffer to the GPU buffer.
-     * Used for initial rasterization or dynamic object injection in some modes.
+     * Used for initial rasterization or dynamic object injection in GPU mode.
      */
     public syncToDevice(): void {
         if (!this.gpuBuffer) return;
         HypercubeGPUContext.device.queue.writeBuffer(this.gpuBuffer, 0, new Uint8Array(this.rawBuffer as any));
     }
 
-    getChunkViews(chunkId: string): IPhysicalChunk {
+    /**
+     * Resolves the physical chunk views for a given ID.
+     */
+    public getChunkViews(chunkId: string): IPhysicalChunk {
         const views = this.chunkViews.get(chunkId);
         if (!views) {
             throw new Error(`MasterBuffer: Chunk ${chunkId} not partitioned.`);
@@ -164,6 +171,13 @@ export class MasterBuffer implements IMasterBuffer {
         return views;
     }
 
+    /**
+     * Injects data into a specific face.
+     * @param chunkId Target chunk
+     * @param faceName Logical face name
+     * @param data Typed data to set
+     * @param fillAllPingPong If true and face is ping-pong, fills both buffers.
+     */
     public setFaceData(chunkId: string, faceName: string, data: Float32Array | number[], fillAllPingPong: boolean = false): void {
         const views = this.getChunkViews(chunkId);
         const dataContract = (this.vGrid as any).dataContract as DataContract;

@@ -80,8 +80,8 @@ describe('Hypercube Neo: LBM Aerodynamics Port', () => {
             const vyIdx = engine.parityManager.getFaceIndices('vy').read;
             const sIdx = engine.parityManager.getFaceIndices('smoke').read;
 
-            const c0Faces = engine.mBuffer.getChunkViews('chunk_0_0_0').faces;
-            const c1Faces = engine.mBuffer.getChunkViews('chunk_0_1_0').faces;
+            const c0Faces = engine.bridge.getChunkViews('chunk_0_0_0');
+            const c1Faces = engine.bridge.getChunkViews('chunk_0_1_0');
 
             const vyTop = c0Faces[vyIdx];
             const vyBottom = c1Faces[vyIdx];
@@ -96,7 +96,7 @@ describe('Hypercube Neo: LBM Aerodynamics Port', () => {
         }
 
         const sIdxFinal = engine.parityManager.getFaceIndices('smoke').read;
-        const smokeTopFinal = engine.mBuffer.getChunkViews('chunk_0_0_0').faces[sIdxFinal];
+        const smokeTopFinal = engine.bridge.getChunkViews('chunk_0_0_0')[sIdxFinal];
 
         let found = false;
         for (let i = 0; i < smokeTopFinal.length; i++) {

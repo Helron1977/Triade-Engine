@@ -1,4 +1,5 @@
-import { IRasterizer, IMasterBuffer, IVirtualGrid, VirtualChunk } from './topology/GridAbstractions';
+import { IRasterizer, IVirtualGrid, VirtualChunk } from './topology/GridAbstractions';
+import { IBufferBridge } from './IBufferBridge';
 import { VirtualObject, EngineFace, EngineDescriptor } from './types';
 import { DataContract } from './DataContract';
 import { ParityManager } from './ParityManager';
@@ -10,7 +11,7 @@ import { ParityManager } from './ParityManager';
 export class ObjectRasterizer implements IRasterizer {
     constructor(private parityManager?: ParityManager) { }
 
-    rasterizeChunk(vChunk: VirtualChunk, vGrid: IVirtualGrid, mBuffer: IMasterBuffer, t: number, target: 'read' | 'write' = 'write'): void {
+    rasterizeChunk(vChunk: VirtualChunk, vGrid: IVirtualGrid, bridge: IBufferBridge, t: number, target: 'read' | 'write' = 'write'): void {
         const grid = vGrid as any;
         const config = grid.config;
         const dataContract = grid.dataContract as DataContract;
@@ -20,7 +21,7 @@ export class ObjectRasterizer implements IRasterizer {
         const chunkObjects: VirtualObject[] = (vGrid as any).getObjectsInChunk(vChunk, t);
         if (chunkObjects.length === 0) return;
 
-        const views = mBuffer.getChunkViews(vChunk.id);
+        const views = bridge.getChunkViews(vChunk.id);
 
         const nx = vChunk.localDimensions.nx;
         const ny = vChunk.localDimensions.ny;
@@ -48,6 +49,7 @@ export class ObjectRasterizer implements IRasterizer {
 
         for (const obj of chunkObjects) {
             if (obj.renderOnly) continue;
+            if (obj.isBaked === false) continue;
 
             // 1. Evaluate dynamic position
             let objX = obj.position.x;
@@ -72,7 +74,7 @@ export class ObjectRasterizer implements IRasterizer {
                     bufferIdx = this.getBufferIndex(faceMappings, faceIdx);
                 }
 
-                const view = views.faces[bufferIdx];
+                const view = views[bufferIdx];
 
                 this.rasterizeShape(obj, objX, objY, propValue as number, view, chunkX0, chunkY0, nx, ny, pNx, pNy, padding);
             }

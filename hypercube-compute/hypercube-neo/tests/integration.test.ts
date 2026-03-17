@@ -42,8 +42,8 @@ describe('Hypercube Neo: Full Integration', () => {
         // Run step 0: Rasterization + Diffusion
         await engine.step(0);
 
-        const c0Views = engine.mBuffer.getChunkViews('chunk_0_0_0');
-        const frameB = c0Views.faces[1]; // Write buffer for temp face
+        const c0Views = engine.bridge.getChunkViews('chunk_0_0_0');
+        const frameB = c0Views[1]; // Write buffer for temp face
 
         const pNx = 16 + 2;
 
@@ -63,7 +63,7 @@ describe('Hypercube Neo: Full Integration', () => {
         // Run step 1: Buffer swap occurs.
         await engine.step(1);
 
-        const frameA = c0Views.faces[0];
+        const frameA = c0Views[0];
         // Value should have diffused from edge to outer cells
         // x=6, y=10 -> px=7, py=11.
         const outerIdx = 11 * pNx + 7;

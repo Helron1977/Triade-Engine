@@ -229,8 +229,8 @@ export class WebGpuIsoRendererNeo {
         this.ensureDepthTexture();
 
         const vGrid = proxy.vGrid;
-        const mBuffer = proxy.mBuffer as NeoMasterBuffer;
-        if (!mBuffer.gpuBuffer) return;
+        const bridge = (proxy.bridge as any);
+        if (!bridge.gpuBuffer) return;
 
         // Note: Zero-Stall Ocean operates natively as 1 Chunk in GPU Mode.
         const nx = vGrid.dimensions.nx;
@@ -253,7 +253,7 @@ export class WebGpuIsoRendererNeo {
         f32Data[5] = this.scale;
         f32Data[6] = this.canvas.width / 2.0;
         f32Data[7] = this.canvas.height / 2.0 + (midH * isoYScale * 0.5);
-        u32Data[8] = mBuffer.strideFace;
+        u32Data[8] = bridge.strideFace;
         f32Data[9] = this.canvas.width;
         f32Data[10] = this.canvas.height;
 
@@ -280,7 +280,7 @@ export class WebGpuIsoRendererNeo {
             this.neoBindGroup = HypercubeGPUContext.device.createBindGroup({
                 layout: this.pipeline!.getBindGroupLayout(0),
                 entries: [
-                    { binding: 0, resource: { buffer: mBuffer.gpuBuffer } },
+                    { binding: 0, resource: { buffer: bridge.gpuBuffer } },
                     { binding: 1, resource: { buffer: this.uniformBuffer! } }
                 ]
             });

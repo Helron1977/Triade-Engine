@@ -19,8 +19,8 @@ export class DebugBridge {
             }),
             // Direct access to physics data
             getFaceValue: async (faceName: string, gx: number, gy: number) => {
-                const mBuf = (engine as any).mBuffer;
-                if (config.mode === 'gpu') await mBuf.syncToHost();
+                const bridge = (engine as any).bridge;
+                if (config.mode === 'gpu') await bridge.syncToHost();
                 const faceIdx = engine.getFaceLogicalIndex(faceName);
                 
                 const vGrid = (engine as any).vGrid;
@@ -29,11 +29,11 @@ export class DebugBridge {
                 const chunk = vGrid.chunks.find((c: any) => c.x === chunkX && c.y === chunkY);
                 if (!chunk) return null;
 
-                const views = mBuf.getChunkViews(chunk.id);
+                const views = bridge.getChunkViews(chunk.id);
                 const pNx = Math.floor(vGrid.dimensions.nx / vGrid.chunkLayout.x) + 2;
                 const lx = (gx % (vGrid.dimensions.nx / vGrid.chunkLayout.x)) + 1;
                 const ly = (gy % (vGrid.dimensions.ny / vGrid.chunkLayout.y)) + 1;
-                return views.faces[faceIdx][ly * pNx + lx];
+                return views[faceIdx][ly * pNx + lx];
             },
             // Diagnostic tools for the AI agent
             diagnose: () => {

@@ -1,16 +1,10 @@
 import { GpuKernelRegistry } from './GpuKernelRegistry';
 
-// @ts-ignore
 import NeoAeroSource from './wgsl/NeoAero.wgsl?raw';
-// @ts-ignore
 import NeoOceanSource from './wgsl/NeoOcean.wgsl?raw';
-// @ts-ignore
 import NeoSDFSource from './wgsl/NeoSDF.wgsl?raw';
-// @ts-ignore
 import NeoHeatSource from './wgsl/NeoHeat.wgsl?raw';
-// @ts-ignore
 import NeoLifeSource from './wgsl/NeoLife.wgsl?raw';
-// @ts-ignore
 import NeoPath from './wgsl/NeoPath.wgsl?raw';
 import NeoTensor from './wgsl/NeoTensor.wgsl?raw';
 

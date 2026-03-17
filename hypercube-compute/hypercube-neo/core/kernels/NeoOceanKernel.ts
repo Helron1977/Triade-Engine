@@ -1,25 +1,31 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme } from '../types';
-import { VirtualChunk } from '../GridAbstractions';
+import { ComputeContext } from './ComputeContext';
+import { KernelBinder } from './KernelBinder';
 
 /**
  * NeoOceanKernel (CPU)
  * Ported from legacy OceanEngine (2.5D Isometric Ocean).
  * Includes LBM fluid dynamics + Biological advection/diffusion.
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class NeoOceanKernel implements IKernel {
+    public readonly metadata = {
+        roles: {
+            source: 'f0',
+            destination: 'f0',
+            obstacles: 'obstacles',
+            auxiliary: [
+                'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8',
+                'rho', 'vx', 'vy', 'biology'
+            ]
+        }
+    };
+
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = gridConfig.padding ?? 1;
-        const pNx = nx + 2;
-        const pNy = ny + 2;
+        const { nx, ny, padding, pNx, pNy, scheme, indices, gridConfig, chunk } = context;
 
         const tau_0 = (scheme.params?.tau_0 as number) || 0.8;
         const cflLimit = (scheme.params?.cflLimit as number) || 0.38;
@@ -27,22 +33,38 @@ export class NeoOceanKernel implements IKernel {
         const bioGrowth = (scheme.params?.bioGrowth as number) || 0.0005;
         const invTau = 1.0 / (tau_0 + 1e-6);
 
-        const f0_in = views[indices['f0'].read], f1_in = views[indices['f1'].read], f2_in = views[indices['f2'].read];
-        const f3_in = views[indices['f3'].read], f4_in = views[indices['f4'].read], f5_in = views[indices['f5'].read];
-        const f6_in = views[indices['f6'].read], f7_in = views[indices['f7'].read], f8_in = views[indices['f8'].read];
+        // Resolve views via Binder
+        const bound = KernelBinder.bind(this, scheme, views, indices);
+        const sourcePair = bound.source;
+        
+        const f0_in = sourcePair.read;
+        const f0_out = bound.destination.write;
 
-        const f0_out = views[indices['f0'].write], f1_out = views[indices['f1'].write], f2_out = views[indices['f2'].write];
-        const f3_out = views[indices['f3'].write], f4_out = views[indices['f4'].write], f5_out = views[indices['f5'].write];
-        const f6_out = views[indices['f6'].write], f7_out = views[indices['f7'].write], f8_out = views[indices['f8'].write];
+        const f1_p = bound.auxiliary[0] || sourcePair;
+        const f2_p = bound.auxiliary[1] || sourcePair;
+        const f3_p = bound.auxiliary[2] || sourcePair;
+        const f4_p = bound.auxiliary[3] || sourcePair;
+        const f5_p = bound.auxiliary[4] || sourcePair;
+        const f6_p = bound.auxiliary[5] || sourcePair;
+        const f7_p = bound.auxiliary[6] || sourcePair;
+        const f8_p = bound.auxiliary[7] || sourcePair;
 
-        const obstacles = views[indices['obstacles'].read];
-        // Note: For Ocean, height is stored in rho
-        const rho_out = views[indices['rho'].write];
-        const ux_out = views[indices['vx'].write];
-        const uy_out = views[indices['vy'].write];
+        const f1_in = f1_p.read; const f1_out = f1_p.write;
+        const f2_in = f2_p.read; const f2_out = f2_p.write;
+        const f3_in = f3_p.read; const f3_out = f3_p.write;
+        const f4_in = f4_p.read; const f4_out = f4_p.write;
+        const f5_in = f5_p.read; const f5_out = f5_p.write;
+        const f6_in = f6_p.read; const f6_out = f6_p.write;
+        const f7_in = f7_p.read; const f7_out = f7_p.write;
+        const f8_in = f8_p.read; const f8_out = f8_p.write;
 
-        const bio_in = views[indices['biology'].read];
-        const bio_out = views[indices['biology'].write];
+        const obstacles = bound.obstacles || new Float32Array(views[0].length);
+        const rho_out = (bound.auxiliary[8] || sourcePair).write;
+        const ux_out = (bound.auxiliary[9] || sourcePair).write;
+        const uy_out = (bound.auxiliary[10] || sourcePair).write;
+        const bio_pair = (bound.auxiliary[11] || sourcePair);
+        const bio_in = bio_pair.read;
+        const bio_out = bio_pair.write;
 
         const isLeft = chunk.x === 0;
         const isRight = chunk.x === gridConfig.chunks.x - 1;
@@ -139,7 +161,6 @@ export class NeoOceanKernel implements IKernel {
                 f8_out[i] = pf[8] - invTau * (pf[8] - w[8] * rho * (1.0 + cu8 + 0.5 * cu8 * cu8 - u2));
 
                 // --- BIO PASS (Advection / Diffusion) ---
-                // Using bio_in as read-only buffer safely allows unified loops
                 const b = bio_in[i];
                 const lap = bio_in[i - 1] + bio_in[i + 1] + bio_in[i - pNx] + bio_in[i + pNx] - 4 * b;
 

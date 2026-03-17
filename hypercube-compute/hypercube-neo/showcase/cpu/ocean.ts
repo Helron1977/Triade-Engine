@@ -1,6 +1,6 @@
 import { HypercubeNeoFactory } from '../../core/HypercubeNeoFactory';
 import { IsoRendererNeo } from '../../io/IsoRendererNeo';
-import { BenchmarkHUD } from '../../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../../io/BenchmarkHUD';
 
 /**
  * Neo Ocean (CPU) Orchestrator
@@ -121,9 +121,9 @@ async function main() {
 
             // Map 1D Chunks to 2D Array for IsoRenderer
             const gridFaces: Float32Array[][][] = Array(ROWS).fill(null).map(() => Array(COLS).fill(null).map(() => []));
-            const mBuffer = (engine as any).mBuffer;
+            const bridge = (engine as any).bridge;
             for (const chunk of engine.vGrid.chunks) {
-                gridFaces[chunk.y][chunk.x] = mBuffer.getChunkViews(chunk.id).faces;
+                gridFaces[chunk.y][chunk.x] = bridge.getChunkViews(chunk.id);
             }
 
             // Render via Legacy IsoRenderer

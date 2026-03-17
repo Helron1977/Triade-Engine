@@ -1,39 +1,42 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme, HypercubeConfig } from '../types';
-import { VirtualChunk } from '../topology/GridAbstractions';
+import { ComputeContext } from './ComputeContext';
+import { KernelBinder } from './KernelBinder';
 
 /**
  * NeoLifeKernel: Implementation of Conway's Game of Life (B3/S23).
  * Uses a 3x3 stencil on a ping-pong face.
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class NeoLifeKernel implements IKernel {
-    execute(
+    public readonly metadata = {
+        roles: {
+            source: 'cells',
+            destination: 'cells'
+        }
+    };
+
+    public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: HypercubeConfig,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = 1;
-        const pNx = nx + 2 * padding;
-        const pNy = ny + 2 * padding;
+        const { nx, ny, padding, pNx, scheme, indices } = context;
 
-        const cellsFace = indices['cells'] || indices[scheme.source] || Object.values(indices)[0];
-        const uRead = views[cellsFace.read];
-        const uWrite = views[cellsFace.write];
+        // Resolve views via Binder
+        const bound = KernelBinder.bind(this, scheme, views, indices);
+        const uRead = bound.source.read;
+        const uWrite = bound.destination.write;
 
-        for (let py = 1; py < pNy - 1; py++) {
-            for (let px = 1; px < pNx - 1; px++) {
+        for (let py = padding; py < ny + padding; py++) {
+            for (let px = padding; px < nx + padding; px++) {
                 const i = py * pNx + px;
                 
                 // Count 8 neighbors
                 let neighbors = 0;
                 for (let dy = -1; dy <= 1; dy++) {
+                    const rowOffset = (py + dy) * pNx;
                     for (let dx = -1; dx <= 1; dx++) {
                         if (dx === 0 && dy === 0) continue;
-                        if (uRead[(py + dy) * pNx + (px + dx)] > 0.5) {
+                        if (uRead[rowOffset + (px + dx)] > 0.5) {
                             neighbors++;
                         }
                     }

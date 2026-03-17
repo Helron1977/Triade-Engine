@@ -1,8 +1,7 @@
-import { IBoundarySynchronizer } from './GridAbstractions';
-import { IVirtualGrid, IMasterBuffer } from './GridAbstractions';
+import { IVirtualGrid, IBoundarySynchronizer } from './GridAbstractions';
+import { IBufferBridge } from '../IBufferBridge';
 import { ParityManager } from '../ParityManager';
 import { HypercubeGPUContext } from '../gpu/HypercubeGPUContext';
-import { MasterBuffer } from '../MasterBuffer';
 import { DataContract } from '../DataContract';
 
 /**
@@ -41,9 +40,9 @@ export class GpuBoundarySynchronizer implements IBoundarySynchronizer {
         });
     }
 
-    public syncAll(vGrid: IVirtualGrid, mBuffer: IMasterBuffer, parityManager: ParityManager, target: 'read' | 'write'): void {
+    public syncAll(vGrid: IVirtualGrid, bridge: IBufferBridge, parityManager: ParityManager, target: 'read' | 'write'): void {
         const grid = vGrid as any;
-        const gpuBuffer = (mBuffer as MasterBuffer).gpuBuffer;
+        const gpuBuffer = bridge.gpuBuffer;
         if (!gpuBuffer) return;
 
         const dataContract = grid.dataContract as DataContract;
@@ -79,8 +78,8 @@ export class GpuBoundarySynchronizer implements IBoundarySynchronizer {
             currentOffset += face.isPingPong ? 2 : 1;
         }
 
-        const facesPerChunk = mBuffer.totalSlotsPerChunk;
-        const strideFace = mBuffer.strideFace;
+        const facesPerChunk = bridge.totalSlotsPerChunk;
+        const strideFace = bridge.strideFace;
 
         // 2. Build Sync Tasks
         for (let i = 0; i < vGrid.chunks.length; i++) {

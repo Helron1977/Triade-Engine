@@ -62,8 +62,8 @@ describe('Hypercube Neo: Physics & Boundaries', () => {
             const dIdx = engine.parityManager.getFaceIndices('density').read;
             const vyIdx = engine.parityManager.getFaceIndices('vy').read;
 
-            const c0Faces = engine.mBuffer.getChunkViews('chunk_0_0_0').faces;
-            const c1Faces = engine.mBuffer.getChunkViews('chunk_0_1_0').faces;
+            const c0Faces = engine.bridge.getChunkViews('chunk_0_0_0');
+            const c1Faces = engine.bridge.getChunkViews('chunk_0_1_0');
 
             const densityTop = c0Faces[dIdx];
             const vyTop = c0Faces[vyIdx];
@@ -78,7 +78,7 @@ describe('Hypercube Neo: Physics & Boundaries', () => {
         }
 
         const dIdxFinal = engine.parityManager.getFaceIndices('density').read;
-        const denTop = engine.mBuffer.getChunkViews('chunk_0_0_0').faces[dIdxFinal];
+        const denTop = engine.bridge.getChunkViews('chunk_0_0_0')[dIdxFinal];
 
         let found = false;
         for (let i = 0; i < denTop.length; i++) {

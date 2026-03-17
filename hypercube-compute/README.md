@@ -53,10 +53,10 @@ Dernière évolution majeure, Hypercube Neo sépare intégralement les lois phys
 - **Performance** : Pipeline "Zero-Stall" et multithreading natif.
 
 👉 **Documentation Neo V4** :
-- [Guide du Manifeste (SSOT)](./docs/neo/manifest-v4.md)
-- [Couche Physics (Engine)](./docs/neo/engine-layer.md)
-- [Couche Géométrie (Objects)](./docs/neo/objects-layer.md)
-- [Intégration JS/TS](./docs/neo/integration.md)
+- [Guide du Manifeste (SSOT)](./hypercube-neo/docs/manifest-v4.md)
+- [Couche Physics (Engine)](./hypercube-neo/docs/engine-layer.md)
+- [Couche Géométrie (Objects)](./hypercube-neo/docs/objects-layer.md)
+- [Intégration JS/TS](./hypercube-neo/docs/integration.md)
 
 ---
 
@@ -228,20 +228,20 @@ const loop = () => {
 ---
 title: Hypercube Architecture - Contiguous O(1) Memory
 ---
-graph TD
-    A[HypercubeMasterBuffer<br>Raw ArrayBuffer] -->|Partitions| B(HypercubeGrid)
+    A[MasterBuffer<br>Contiguous Memory] -->|Managed by| Bridge[IBufferBridge]
+    Bridge -->|CPU/Worker| B(HypercubeGrid)
+    Bridge -->|VRAM| GPU[WebGPU Context]
     
     B --> C1[HypercubeChunk<br>Chunk A]
     B --> C2[HypercubeChunk<br>Chunk B]
     
-    C1 <-->|Face-to-Face Data Link| C2
+    C1 <-->|Bridge Sync| C2
     
     C1 -->|Holds| F1[Face 0: Float32Array]
     C1 -->|Holds| F2[Face 1: Float32Array]
-    C1 -->|Holds| F3[Face N: Float32Array]
     
-    F1 -.->|Pointers Pass to| E[IHypercubeEngine<br>Physics Logic]
-    F2 -.->|Pointers Pass to| E
+    F1 -.->|Resolved via Binder| E[IKernel<br>Physics Logic]
+    F2 -.->|Resolved via Binder| E
 ```
 
 ---

@@ -1,19 +1,25 @@
 import { IKernel } from './IKernel';
-import { NumericalScheme } from '../types';
-import { VirtualChunk } from '../GridAbstractions';
+import { ComputeContext } from './ComputeContext';
 
 /**
  * Kernel for Semi-Lagrangian Advection.
  * Enhanced with Finite-Value safeguards and high-velocity damping.
+ * Refactored for Phase 3: Uses ComputeContext for agnostic memory access.
  */
 export class AdvectionKernel implements IKernel {
+    public readonly metadata = {
+        roles: {
+            source: 'any',
+            destination: 'any'
+        }
+    };
+
     public execute(
         views: Float32Array[],
-        scheme: NumericalScheme,
-        indices: Record<string, { read: number; write: number }>,
-        gridConfig: any,
-        chunk: VirtualChunk
+        context: ComputeContext
     ): void {
+        const { nx, ny, padding, pNx, pNy, scheme, indices } = context;
+
         const sourceFace = scheme.source;
         const destFace = scheme.destination || sourceFace;
         const velocityField = scheme.field;
@@ -32,13 +38,6 @@ export class AdvectionKernel implements IKernel {
         const dst = views[writeIdx];
         const vx = views[velXIdx];
         const vy = views[velYIdx];
-
-        const nx = Math.floor(gridConfig.dimensions.nx / gridConfig.chunks.x);
-        const ny = Math.floor(gridConfig.dimensions.ny / gridConfig.chunks.y);
-        const padding = gridConfig.padding ?? 1;
-
-        const pNx = nx + 2 * padding;
-        const pNy = ny + 2 * padding;
 
         const dt = (scheme.params?.dt as number) || 0.1;
         const dissipation = (scheme.params?.dissipation as number) || 1.0;

@@ -1,6 +1,6 @@
 import { HypercubeNeoFactory } from '../../core/HypercubeNeoFactory';
 import { WebGpuIsoRendererNeo } from '../../io/WebGpuIsoRendererNeo';
-import { BenchmarkHUD } from '../../../examples/shared/BenchmarkHUD';
+import { BenchmarkHUD } from '../../io/BenchmarkHUD';
 
 /**
  * Neo Ocean (GPU) Orchestrator
@@ -105,7 +105,7 @@ async function main() {
     });
 
     // 6. Initialization
-    await (engine as any).mBuffer.syncToDevice();
+    await (engine as any).bridge.syncToDevice();
     let isInitialized = false;
 
     async function loop() {
