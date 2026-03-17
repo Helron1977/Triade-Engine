@@ -109,7 +109,7 @@ Ceci vous permet de simuler des océans LBM à une vitesse impossible pour le fi
 
 Pour les simulations massives (512x512 et plus), le mode **GPU (WebGPU)** est recommandé.
 
-![Démonstration de l'Océan GPU à 60 FPS](./media/ocean-gpu-demo.webp)
+![Démonstration de l'Océan GPU à 60 FPS](https://raw.githubusercontent.com/Helron1977/Hypercube-Compute/main/hypercube-neo/docs/media/ocean-gpu-demo.webp)
 *Simulation 512x512 tournant intégralement en VRAM avec le renderer WebGPU natif.*
 
 ### 1. Pourquoi le mode GPU ?

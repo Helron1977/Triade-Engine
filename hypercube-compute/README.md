@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/docs/assets/logo.png" alt="Hypercube Engine Logo" width="200" style="border-radius:20px;" onerror="this.src='https://img.icons8.com/isometric/512/cube.png';"/>
+  <img src="https://raw.githubusercontent.com/Helron1977/Hypercube-Compute/main/docs/assets/logo.png" alt="Hypercube Engine Logo" width="200" style="border-radius:20px;" onerror="this.src='https://img.icons8.com/isometric/512/cube.png';"/>
   <h1>🌊 Hypercube Neo 🚀</h1>
   <p><strong>A GodMode O(1) Tensor-based Compute Engine for Web & Node.js</strong></p>
   
@@ -74,7 +74,7 @@ A fully continuous computational fluid dynamics solver. It forces "wind" through
 
 **WEBGPU Performance**: The LBM engine is fully ported to WGSL, capable of 60 FPS simulations with complex vorticity calculations entirely on the GPU.
 
-![Ocean GPU Demo](https://raw.githubusercontent.com/Helron1977/Hypercube-engine/main/hypercube-neo/docs/media/ocean-gpu-demo.webp)
+![Ocean GPU Demo](https://raw.githubusercontent.com/Helron1977/Hypercube-Compute/main/hypercube-neo/docs/media/ocean-gpu-demo.webp)
 *Real-time fluid vorticity calculated at 60 FPS via WebGPU (Hypercube Neo).*
 
 ### 🌊 Ocean Simulator
@@ -301,7 +301,7 @@ Requires these server security headers:
 👉 **[View Interactive Multi-Engine Demo](https://helron1977.github.io/Hypercube-Compute/)**
 - **Switch Engines**: Use the buttons to swap logic.
 - **Interact**: Click and drag to create vortices or draw obstacles.
-- **3D**: Check the `heat-cpu.html` or `heat-gpu.html` in the `showcase/` folder for volumetric rendering.
+- **3D**: Check the `heat-cpu.html` or `heat-gpu.html` in the `hypercube-neo/showcase/` folder for volumetric rendering.
 
 ---
 
