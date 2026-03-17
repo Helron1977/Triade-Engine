@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-    root: 'examples', // Base directory for the showcase
-    publicDir: '../assets', // Global assets if needed
+    root: 'showcase', // Base directory for the showcase
+    publicDir: 'assets', // Assets inside showcase/
     build: {
         outDir: '../dist-examples',
         emptyOutDir: true

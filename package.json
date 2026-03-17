@@ -2,16 +2,16 @@
   "name": "hypercube-compute",
   "version": "4.0.0-alpha.2",
   "description": "A high-performance O(1) tensor-based compute engine for Web and Node.js environments.",
-  "main": "hypercube-neo/dist/index.js",
-  "module": "hypercube-neo/dist/index.mjs",
-  "types": "hypercube-neo/dist/index.d.ts",
+  "main": "dist/HypercubeNeo.js",
+  "module": "dist/HypercubeNeo.mjs",
+  "types": "dist/HypercubeNeo.d.ts",
   "scripts": {
-    "build": "tsup hypercube-neo/HypercubeNeo.ts --format cjs,esm --dts --clean",
-    "dev": "tsup hypercube-neo/HypercubeNeo.ts --format cjs,esm --dts --watch",
-    "test": "vitest run hypercube-neo/tests",
-    "test:watch": "vitest hypercube-neo/tests",
-    "showcase": "vite --config hypercube-neo/vite.config.ts",
-    "neo:showcase": "vite --config hypercube-neo/vite.config.ts"
+    "build": "tsup HypercubeNeo.ts --format cjs,esm --dts --clean",
+    "dev": "tsup HypercubeNeo.ts --format cjs,esm --dts --watch",
+    "test": "vitest run tests",
+    "test:watch": "vitest tests",
+    "showcase": "vite",
+    "neo:showcase": "vite"
   },
   "keywords": [
     "tensor",

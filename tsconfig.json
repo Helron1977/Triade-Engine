@@ -20,7 +20,14 @@
         ]
     },
     "include": [
-        "hypercube-neo/**/*"
+        "core/**/*",
+        "io/**/*",
+        "showcase/**/*",
+        "tests/**/*",
+        "helpers/**/*",
+        "tools/**/*",
+        "HypercubeNeo.ts",
+        "env.d.ts"
     ],
     "exclude": [
         "node_modules",
