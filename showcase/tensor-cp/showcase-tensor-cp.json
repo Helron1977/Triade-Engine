@@ -5,8 +5,9 @@
         "type": "neo-tensor-cp-v1",
         "params": {
             "rank": 10,
-            "maxIter": 100,
-            "tolerance": 1e-4
+            "maxIterations": 100,
+            "tolerance": 1e-4,
+            "regularization": 0.05
         },
         "faces": [
             { "name": "mode_a", "type": "factor", "isPingPong": false, "isSynchronized": true },
@@ -25,18 +26,19 @@
     },
     "config": {
         "mode": "cpu",
-        "dimensions": { "nx": 10, "ny": 10, "nz": 10 },
+        "dimensions": { "nx": 32, "ny": 32, "nz": 8 },
         "chunks": { "x": 1, "y": 1 },
         "boundaries": {
             "all": { "role": "wall" }
         },
         "params": {
             "rank": 10,
-            "maxIterations": 100
+            "maxIterations": 100,
+            "regularization": 0.05
         }
     },
     "visualProfile": {
         "colormap": "viridis",
-        "range": [-1, 1]
+        "range": [0, 5]
     }
 }

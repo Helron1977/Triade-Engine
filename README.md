@@ -6,9 +6,9 @@ Hypercube Neo is a state-of-the-art **Spatial Computing & Physical Simulation En
   <img src="https://raw.githubusercontent.com/Helron1977/Hypercube-Compute/main/docs/assets/logo.png" alt="Hypercube Neo Logo" width="220" style="border-radius:24px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);" onerror="this.src='https://img.icons8.com/isometric/512/cube.png';"/>
   <p><strong>Pure O(1) Cognitive Engine • Zero-Allocation Tensors • WebGPU & Multithreaded CPU</strong></p>
 
-  [![Version](https://img.shields.io/badge/Version-4.0.0--alpha.2-orange.svg?style=flat-square)](https://github.com/Helron1977/Hypercube-Compute)
+  [![Version](https://img.shields.io/badge/Version-4.0.0--alpha.4-orange.svg?style=flat-square)](https://github.com/Helron1977/Hypercube-Compute)
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-  [![Build: Passing](https://img.shields.io/badge/Tests-72%2F72%20Passing-green?style=flat-square)](./tests/)
+  [![Build: Passing](https://img.shields.io/badge/Tests-76%2F76%20Passing-green?style=flat-square)](./tests/)
 </div>
 
 ---

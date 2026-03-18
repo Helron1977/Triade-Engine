@@ -22,9 +22,10 @@ export class NeoTensorKernel implements IKernel {
         context: ComputeContext
     ): void {
         const { nx, ny, nz } = context;
-        const params = context.params;
-        const rank = params.rank || 3;
-        const reg = params.regularization || 0.001;
+        const schemeParams = (context as any).scheme?.params || {};
+        const rank = (schemeParams.rank as number) || 10;
+        const reg = (schemeParams.regularization as number) || 0.05;
+        const lr = (schemeParams.learningRate as number) || 0.01;
 
         const mode_a = views[0];
         const mode_b = views[1];
@@ -49,17 +50,20 @@ export class NeoTensorKernel implements IKernel {
 
                     if (val === 0) continue; // Sparse handling
 
+                    const err = val - pred;
+
                     for (let r = 0; r < rank; r++) {
                         const idxA = i * rank + r;
                         const idxB = j * rank + r;
                         const idxC = k * rank + r;
 
-                        const err = val - pred;
+                        const gradA = err * mode_b[idxB] * mode_c[idxC];
+                        const gradB = err * mode_a[idxA] * mode_c[idxC];
+                        const gradC = err * mode_a[idxA] * mode_b[idxB];
 
-                        const lr = 0.01;
-                        mode_a[idxA] += lr * (err * mode_b[idxB] * mode_c[idxC] - reg * mode_a[idxA]);
-                        mode_b[idxB] += lr * (err * mode_a[idxA] * mode_c[idxC] - reg * mode_b[idxB]);
-                        mode_c[idxC] += lr * (err * mode_a[idxA] * mode_b[idxB] - reg * mode_c[idxC]);
+                        mode_a[idxA] += lr * (gradA - reg * mode_a[idxA]);
+                        mode_b[idxB] += lr * (gradB - reg * mode_b[idxB]);
+                        mode_c[idxC] += lr * (gradC - reg * mode_c[idxC]);
                     }
                 }
             }

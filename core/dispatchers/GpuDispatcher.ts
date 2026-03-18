@@ -36,7 +36,7 @@ export class GpuDispatcher implements IDispatcher {
         const bytesPerChunkAligned = HypercubeGPUContext.alignToUniform(384); 
         this.uniformBuffer = this.device.createBuffer({
             size: bytesPerChunkAligned,
-            usage: (GPUBufferUsage as any).UNIFORM | (GPUBufferUsage as any).COPY_DST,
+            usage: (GPUBufferUsage as any).UNIFORM | (GPUBufferUsage as any).STORAGE | (GPUBufferUsage as any).COPY_DST,
             label: 'Neo GpuDispatcher Uniforms'
         });
     }
@@ -71,7 +71,7 @@ export class GpuDispatcher implements IDispatcher {
             if (this.uniformBuffer) this.uniformBuffer.destroy();
             this.uniformBuffer = this.device.createBuffer({
                 size: totalUniformSize,
-                usage: (GPUBufferUsage as any).UNIFORM | (GPUBufferUsage as any).COPY_DST,
+                usage: (GPUBufferUsage as any).UNIFORM | (GPUBufferUsage as any).STORAGE | (GPUBufferUsage as any).COPY_DST,
                 label: 'Neo GpuDispatcher Uniforms'
             });
             this.bindGroupCache.clear();
@@ -113,6 +113,23 @@ export class GpuDispatcher implements IDispatcher {
                 const vChunk = this.vGrid.chunks[i];
                 const base = i * (bytesPerChunkAligned / 4);
 
+                if (scheme.type === 'neo-tensor-cp-v1') {
+                    // Specialized Tensor Layout (Matches NeoTensor.wgsl Uniforms struct)
+                    u32Data[base + 0] = nx_chunk;
+                    u32Data[base + 1] = ny_chunk;
+                    u32Data[base + 2] = this.vGrid.dimensions.nz || 1;
+                    f32Data[base + 3] = (scheme.params?.rank as number) || 10;
+                    f32Data[base + 4] = (scheme.params?.regularization as number) || 0.05;
+                    u32Data[base + 5] = getIdx('mode_a', 'write');
+                    u32Data[base + 6] = getIdx('mode_b', 'write');
+                    u32Data[base + 7] = getIdx('mode_c', 'write');
+                    u32Data[base + 8] = getIdx('target', 'read');
+                    u32Data[base + 9] = getIdx('reconstruction', 'write');
+                    u32Data[base + 10] = strideFace;
+                    u32Data[base + 11] = this.parityManager.currentTick;
+                    continue;
+                }
+
                 u32Data[base + 0] = nx_chunk;
                 u32Data[base + 1] = ny_chunk;
                 u32Data[base + 2] = this.vGrid.chunkLayout.x;
@@ -146,16 +163,6 @@ export class GpuDispatcher implements IDispatcher {
                 } else if (scheme.type === 'neo-ocean-v1') {
                     f32Data[base + 22] = (scheme.params?.bioDiffusion as number) ?? 0.001;
                     f32Data[base + 23] = (scheme.params?.bioGrowth as number) ?? 0.01;
-                } else if (scheme.type === 'neo-tensor-cp-v1') {
-                    f32Data[base + 22] = (scheme.params?.rank as number) ?? 3.0; // Rank
-                    f32Data[base + 23] = (scheme.params?.regularization as number) ?? 0.001; // Reg
-                    
-                    // Tensor specific face layout mapping
-                    u32Data[base + 31] = getIdx('mode_a', 'write');
-                    u32Data[base + 32] = getIdx('mode_b', 'write');
-                    u32Data[base + 33] = getIdx('mode_c', 'write');
-                    u32Data[base + 34] = getIdx('target', 'read');
-                    u32Data[base + 35] = getIdx('reconstruction', 'write');
                 }
 
                 const topo = this.topologyResolver.resolve(vChunk, this.vGrid.chunkLayout, grid.config.boundaries);
@@ -206,7 +213,18 @@ export class GpuDispatcher implements IDispatcher {
                 const passEncoder = commandEncoder.beginComputePass();
                 passEncoder.setPipeline(pipeline);
                 passEncoder.setBindGroup(0, bindGroup);
-                passEncoder.dispatchWorkgroups(Math.ceil(nx_chunk / 16), Math.ceil(ny_chunk / 16));
+                
+                if (scheme.type === 'neo-tensor-cp-v1') {
+                    const nx_chunk = vChunk.localDimensions.nx;
+                    const ny_chunk = vChunk.localDimensions.ny;
+                    const nz = this.vGrid.dimensions.nz || 1;
+                    const maxDim = Math.max(nx_chunk, ny_chunk, nz);
+                    passEncoder.dispatchWorkgroups(Math.ceil(maxDim / 16), 1, 1);
+                } else {
+                    const nx_chunk = vChunk.localDimensions.nx;
+                    const ny_chunk = vChunk.localDimensions.ny;
+                    passEncoder.dispatchWorkgroups(Math.ceil(nx_chunk / 16), Math.ceil(ny_chunk / 16));
+                }
                 passEncoder.end();
             }
         }

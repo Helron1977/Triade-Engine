@@ -1,83 +1,140 @@
 @group(0) @binding(0) var<storage, read_write> uData : array<f32>;
 
 struct Uniforms {
-    nx: u32,
-    ny: u32,
-    chunkX: u32,
-    chunkY: u32,
-    rank: f32, // Offset 22
-    reg: f32,  // Offset 23
-    reserved: array<u32, 7>,
-    idxModeA: u32, // Offset 31
-    idxModeB: u32, // Offset 32
-    idxModeC: u32, // Offset 33
-    idxTarget: u32, // Offset 34
-    idxRecon: u32  // Offset 35
+    nx : u32,
+    ny : u32,
+    nz : u32,
+    rank : f32,
+    reg : f32,
+    idxModeA : u32,
+    idxModeB : u32,
+    idxModeC : u32,
+    idxTarget : u32,
+    idxRecon : u32,
+    strideFace : u32,
+    tick : u32,
 };
-@group(0) @binding(1) var<storage, read> u : Uniforms;
+@group(0) @binding(1) var<uniform> u : Uniforms;
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(16, 1)
 fn main(@builtin(global_invocation_id) id : vec3<u32>) {
-    // Current point in the target tensor [NX x NY x NZ]
-    // Note: NZ is handled by iteration or slicing in this simple version
-    // For 2D/3D visualization of the slice:
     let nx = u.nx;
     let ny = u.ny;
-    let nz = u32(7); // Default if not provided in uniforms, but should be from context
-    // Note: We should ideally have nz in uniforms. Let's assume u.ny (already there) and add iteration.
-    
-    if (id.x >= nx || id.y >= ny) { return; }
-
-    let i = id.x;
-    let j = id.y;
+    let nz = u.nz;
     let rank = u32(u.rank);
+    let stride = u.strideFace;
+    let lr = 0.01;
+    let reg = u.reg;
 
-    // Iterating over NZ to handle the full 3D tensor in this invocation
-    // This is more robust for small tensors like 10x10x10
-    for (var k: u32 = 0u; k < 128u; k = k + 1u) {
-        // Dynamic bounds check (nz should be in uniforms, but for now we use a safe large cap ornx*ny*nz)
-        // Hardcoding a limit for now as u.nx, u.ny are available.
-        // Better: Use a global param from u.reserved or add nz to struct.
-        
-        // Actually, let's check GpuDispatcher.ts to see if we can add NZ.
-        // For now, let's keep it 2D and wait for the dispatch logic update.
-        // WAIT: GpuDispatcher.ts line 116-117 only shows nx_chunk, ny_chunk.
-        
-        let tensorIdx = i + j * nx + k * nx * ny;
-        if (tensorIdx >= 1000000u) { break; } // Safety break
-
-        let val = uData[u.idxTarget + tensorIdx];
-
-        // 1. Calculate Reconstruction
-        var pred: f32 = 0.0;
-        for (var r: u32 = 0u; r < rank; r = r + 1u) {
-            let valA = uData[u.idxModeA + i * rank + r];
-            let valB = uData[u.idxModeB + j * rank + r];
-            let valC = uData[u.idxModeC + k * rank + r];
-            pred += valA * valB * valC;
+    // 1. RECONSTRUCTION PASS (Always happens for visualization)
+    // We reuse (id.x, id.y) threads to fill the recon buffer
+    // Since we changed workgroup size to (16, 1), we need to adapt
+    let i_recon = id.x;
+    if (i_recon < nx) {
+        for (var j_recon: u32 = 0u; j_recon < ny; j_recon = j_recon + 1u) {
+            for (var k_recon: u32 = 0u; k_recon < nz; k_recon = k_recon + 1u) {
+                let idx = i_recon + j_recon * nx + k_recon * nx * ny;
+                var pred: f32 = 0.0;
+                for (var r: u32 = 0u; r < rank; r = r + 1u) {
+                    pred += uData[u.idxModeA * stride + i_recon * rank + r] * 
+                            uData[u.idxModeB * stride + j_recon * rank + r] * 
+                            uData[u.idxModeC * stride + k_recon * rank + r];
+                }
+                uData[u.idxRecon * stride + idx] = pred;
+            }
         }
+    }
 
-        // Store for visualization
-        uData[u.idxRecon + tensorIdx] = pred;
+    // 2. BATCH FACTOR UPDATE (Rotating per tick to avoid race conditions)
+    // tick % 3: 0 -> Update A, 1 -> Update B, 2 -> Update C
+    let mode = u.tick % 3u;
 
-        if (val == 0.0) { continue; }
-
-        // 2. Gradient Update Step
-        let err = val - pred;
-        let lr = 0.01;
-
-        for (var r: u32 = 0u; r < rank; r = r + 1u) {
-            let idxA = u.idxModeA + i * rank + r;
-            let idxB = u.idxModeB + j * rank + r;
-            let idxC = u.idxModeC + k * rank + r;
-
-            let valA = uData[idxA];
-            let valB = uData[idxB];
-            let valC = uData[idxC];
-
-            uData[idxA] += lr * (err * valB * valC - u.reg * valA);
-            uData[idxB] += lr * (err * valA * valC - u.reg * valB);
-            uData[idxC] += lr * (err * valA * valB - u.reg * valC);
+    if (mode == 0u) {
+        // Update Mode A: parallel over i
+        let i = id.x;
+        if (i < nx) {
+            for (var r: u32 = 0u; r < rank; r = r + 1u) {
+                var grad: f32 = 0.0;
+                var count: f32 = 0.0;
+                for (var j: u32 = 0u; j < ny; j = j + 1u) {
+                    for (var k: u32 = 0u; k < nz; k = k + 1u) {
+                        let idx = i + j * nx + k * nx * ny;
+                        let val = uData[u.idxTarget * stride + idx];
+                        if (val > 0.0) {
+                            var pred_local: f32 = 0.0;
+                            for (var rr: u32 = 0u; rr < rank; rr = rr + 1u) {
+                                pred_local += uData[u.idxModeA * stride + i * rank + rr] * 
+                                              uData[u.idxModeB * stride + j * rank + rr] * 
+                                              uData[u.idxModeC * stride + k * rank + rr];
+                            }
+                            grad += (val - pred_local) * uData[u.idxModeB * stride + j * rank + r] * uData[u.idxModeC * stride + k * rank + r];
+                            count += 1.0;
+                        }
+                    }
+                }
+                if (count > 0.0) {
+                    let idxA = u.idxModeA * stride + i * rank + r;
+                    uData[idxA] += lr * (grad - reg * uData[idxA]);
+                }
+            }
+        }
+    } else if (mode == 1u) {
+        // Update Mode B: parallel over j
+        let j = id.x; // Use id.x as our parallel dimension
+        if (j < ny) {
+            for (var r: u32 = 0u; r < rank; r = r + 1u) {
+                var grad: f32 = 0.0;
+                var count: f32 = 0.0;
+                for (var i: u32 = 0u; i < nx; i = i + 1u) {
+                    for (var k: u32 = 0u; k < nz; k = k + 1u) {
+                        let idx = i + j * nx + k * nx * ny;
+                        let val = uData[u.idxTarget * stride + idx];
+                        if (val > 0.0) {
+                            var pred_local: f32 = 0.0;
+                            for (var rr: u32 = 0u; rr < rank; rr = rr + 1u) {
+                                pred_local += uData[u.idxModeA * stride + i * rank + rr] * 
+                                              uData[u.idxModeB * stride + j * rank + rr] * 
+                                              uData[u.idxModeC * stride + k * rank + rr];
+                            }
+                            grad += (val - pred_local) * uData[u.idxModeA * stride + i * rank + r] * uData[u.idxModeC * stride + k * rank + r];
+                            count += 1.0;
+                        }
+                    }
+                }
+                if (count > 0.0) {
+                    let idxB = u.idxModeB * stride + j * rank + r;
+                    uData[idxB] += lr * (grad - reg * uData[idxB]);
+                }
+            }
+        }
+    } else {
+        // Update Mode C: parallel over k
+        let k = id.x;
+        if (k < nz) {
+            for (var r: u32 = 0u; r < rank; r = r + 1u) {
+                var grad: f32 = 0.0;
+                var count: f32 = 0.0;
+                for (var i: u32 = 0u; i < nx; i = i + 1u) {
+                    for (var j: u32 = 0u; j < ny; j = j + 1u) {
+                        let idx = i + j * nx + k * nx * ny;
+                        let val = uData[u.idxTarget * stride + idx];
+                        if (val > 0.0) {
+                            var pred_local: f32 = 0.0;
+                            for (var rr: u32 = 0u; rr < rank; rr = rr + 1u) {
+                                pred_local += uData[u.idxModeA * stride + i * rank + rr] * 
+                                              uData[u.idxModeB * stride + j * rank + rr] * 
+                                              uData[u.idxModeC * stride + k * rank + rr];
+                            }
+                            grad += (val - pred_local) * uData[u.idxModeA * stride + i * rank + r] * uData[u.idxModeB * stride + j * rank + r];
+                            count += 1.0;
+                        }
+                    }
+                }
+                if (count > 0.0) {
+                    let idxC = u.idxModeC * stride + k * rank + r;
+                    uData[idxC] += lr * (grad - reg * uData[idxC]);
+                }
+            }
         }
     }
 }

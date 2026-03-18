@@ -157,7 +157,18 @@ export class MasterBuffer implements IMasterBuffer {
      */
     public syncToDevice(): void {
         if (!this.gpuBuffer) return;
-        HypercubeGPUContext.device.queue.writeBuffer(this.gpuBuffer, 0, new Uint8Array(this.rawBuffer as any));
+        
+        let dataToSync: Uint8Array;
+        if (this.rawBuffer instanceof SharedArrayBuffer) {
+            // Some environments/drivers don't like writeBuffer from SharedArrayBuffer directly
+            const plain = new ArrayBuffer(this.byteLength);
+            new Uint8Array(plain).set(new Uint8Array(this.rawBuffer));
+            dataToSync = new Uint8Array(plain);
+        } else {
+            dataToSync = new Uint8Array(this.rawBuffer);
+        }
+        
+        HypercubeGPUContext.device.queue.writeBuffer(this.gpuBuffer, 0, dataToSync as any);
     }
 
     /**

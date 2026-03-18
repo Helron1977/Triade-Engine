@@ -1,205 +1,479 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hypercube Neo - Tensor Decomposition</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="../assets/showcase.css">
+    <title>Hypercube Neo | Tensor Data Explorer</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: #050a14;
-            --accent: #00f2ff;
-            --surface: #0a1428;
-            --text: #cbd5e1;
-            --border-dim: rgba(0, 242, 255, 0.1);
+            --bg: #0a0a0c;
+            --surface: #141418;
+            --primary: #6366f1;
+            --accent: #8b5cf6;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --border: #2d2d35;
         }
+
         body {
-            background: var(--bg-dark);
-            color: var(--text);
-            font-family: 'Inter', sans-serif;
             margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
             display: flex;
             flex-direction: column;
-            min-height: 100vh;
-            background-image: radial-gradient(circle at 50% 50%, #102040 0%, var(--bg-dark) 100%);
+            height: 100vh;
+            overflow: hidden;
         }
+
         header {
-            padding: 3rem 1rem;
-            text-align: center;
-            background: rgba(5, 10, 20, 0.8);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid var(--border-dim);
+            padding: 1rem 2rem;
+            background: rgba(20, 20, 24, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
         }
-        header h1 {
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 400;
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            font-size: 1.5rem;
+
+        .title-group h1 {
             margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #fff 0%, var(--text-dim) 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        header p {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7rem;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 0.5rem;
-        }
-        .container {
-            max-width: 1100px;
-            margin: 3rem auto;
+
+        .main-container {
             display: grid;
             grid-template-columns: 320px 1fr;
-            gap: 2rem;
-            padding: 0 1rem;
+            flex: 1;
+            overflow: hidden;
         }
-        .panel {
-            background: rgba(10, 20, 40, 0.6);
-            padding: 2rem;
-            border: 1px solid var(--border-dim);
-            clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
-        }
-        .panel h3 {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            color: var(--accent);
-            margin-top: 0;
-            letter-spacing: 1px;
-        }
-        .controls label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-size: 0.7rem;
-            font-family: 'JetBrains Mono', monospace;
-            color: #64748b;
-            text-transform: uppercase;
-        }
-        .controls input, .controls select {
-            width: 100%;
-            padding: 0.75rem;
-            background: #050a14;
-            border: 1px solid var(--border-dim);
-            color: white;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            margin-bottom: 1.5rem;
-            box-sizing: border-box;
-        }
-        .btn {
+
+        /* Sidebar Controls */
+        aside {
             background: var(--surface);
-            color: white;
-            border: 1px solid var(--border-dim);
-            padding: 1rem;
-            width: 100%;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7rem;
+            border-right: 1px solid var(--border);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: auto;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-dim);
             text-transform: uppercase;
-            letter-spacing: 2px;
+            letter-spacing: 0.05em;
+        }
+
+        select, input {
+            background: #1c1c22;
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 0.6rem;
+            border-radius: 6px;
+            font-family: inherit;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 0.8rem;
+            border-radius: 6px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
-            margin-bottom: 1rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
         }
+
         .btn:hover {
-            background: var(--accent);
-            color: #050a14;
-            box-shadow: 0 0 15px rgba(0, 242, 255, 0.2);
+            filter: brightness(1.1);
+            transform: translateY(-1px);
         }
-        .btn.secondary {
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-outline {
             background: transparent;
-            border: 1px solid var(--border-dim);
-            color: var(--accent);
+            border: 1px solid var(--border);
         }
-        .visuals canvas {
-            background: #000;
-            border: 1px solid rgba(255,255,255,0.05);
-            width: 100% !important;
-            height: 350px !important;
+
+        .btn-outline:hover {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.1);
         }
-        #stats {
+
+        /* Content Area */
+        main {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .tabs {
+            display: flex;
+            padding: 0 2rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+        .tab {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            color: var(--text-dim);
+            border-bottom: 2px solid transparent;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        /* Matrix Table Display */
+        .matrix-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+        }
+
+        .matrix-card {
+            background: #1c1c22;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .matrix-table-container {
+            max-height: 300px;
+            overflow: auto;
             margin-top: 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+        }
+
+        th {
+            background: #25252d;
+            padding: 0.6rem;
+            text-align: left;
+            position: sticky;
+            top: 0;
+            color: var(--text-dim);
+        }
+
+        td {
+            padding: 0.5rem 0.6rem;
+            border-bottom: 1px solid #25252d;
+        }
+
+        /* Visualization Panel */
+        #viz-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .viz-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .canvas-card {
+            background: #1c1c22;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .canvas-card label {
+            font-size: 0.7rem;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .slice-mse {
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.7rem;
-            color: #10b981;
+            color: var(--text-dim);
+            margin-top: 0.2rem;
+        }
+
+        #canvas-container {
+            background: #000;
+            padding: 0.5rem;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+
+        canvas {
+            image-rendering: pixelated;
+        }
+
+        /* Value interpolation for tables */
+        .val-pos { background: rgba(34, 197, 94, 0.2); }
+        .val-neg { background: rgba(239, 68, 68, 0.2); }
+
+        /* Analytics Chart */
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+        }
+
+        /* Performance HUD */
+        #hud-container {
+            position: absolute;
+            bottom: 2rem;
+            right: 2rem;
+            background: rgba(20, 20, 24, 0.9);
+            border: 1px solid var(--border);
+            padding: 1rem;
+            border-radius: 8px;
+            backdrop-filter: blur(8px);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .hud-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 2rem;
+        }
+
+        .hud-val {
+            color: var(--primary);
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
     <header>
-        <a href="../index.html" class="hub-button">Back to Hub</a>
-        <h1>Tensor Field Decomposition</h1>
-        <p>[ High-rank multi-linear algebra core ]</p>
+        <div class="title-group">
+            <h1>HYPERCUBE NEO | TENSOR CP DATA EXPLORER</h1>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-outline" id="btn-export">Export Factors (JSON)</button>
+        </div>
     </header>
 
-    <div class="container">
-        <aside class="panel controls">
-            <label>Input Data</label>
-            <button class="btn secondary" id="loadSample">Load Sample (5x5x3)</button>
-            <input type="file" id="csvFile" style="display:none">
-            <button class="btn secondary" onclick="document.getElementById('csvFile').click()">Upload CSV</button>
+    <div class="main-container">
+        <aside>
+            <div class="control-group">
+                <label>Dataset</label>
+                <input type="file" id="csv-upload" accept=".csv" style="display: none;">
+                <button class="btn btn-outline" onclick="document.getElementById('csv-upload').click()">Upload CSV</button>
+                <button class="btn btn-outline" id="btn-load-sample">Load MovieLens Sample</button>
+            </div>
 
-            <label>Decomposition Rank (K)</label>
-            <input type="range" min="1" max="10" value="3" id="rankRange">
-            <div style="text-align:right; margin-top:-1rem">Rank: <span id="rankVal">3</span></div>
+            <div class="control-group">
+                <label>Backend</label>
+                <select id="backend-select">
+                    <option value="cpu">CPU Parallel</option>
+                    <option value="gpu">WebGPU Accelerated</option>
+                </select>
+            </div>
 
-            <label>Backend Authority</label>
-            <select id="backendChoice">
-                <option value="cpu">Multi-threaded CPU</option>
-                <option value="gpu">WebGPU Tensor Fabric</option>
-            </select>
+            <div class="control-group" id="manifest-info" style="font-size: 0.75rem; color: var(--text-dim); background: #1c1c22; padding: 0.8rem; border-radius: 6px; border: 1px solid var(--border);">
+                <label>Manifest Link</label>
+                <div id="manifest-details">Loading manifest...</div>
+            </div>
 
-            <button class="btn" id="runBtn">Start Decomposition</button>
-            <div id="stats">Ready...</div>
+            <div class="control-group">
+                <label>Decomposition Parameters</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <div>
+                        <label style="font-size: 0.6rem;">Rank</label>
+                        <input type="number" id="param-rank" value="10" min="1" max="50" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.6rem;">Max Iter</label>
+                        <input type="number" id="param-iter" value="100" min="1" max="1000" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.5rem;">
+                    <div>
+                        <label style="font-size: 0.6rem;">Reg.</label>
+                        <input type="number" id="param-reg" value="0.05" step="0.01" min="0" max="1" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.6rem;">LR</label>
+                        <input type="number" id="param-lr" value="0.01" step="0.01" min="0.001" max="1" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: auto; display: flex; flex-direction: column; gap: 0.8rem;">
+                <button class="btn" id="btn-run">RUN ALS DECOMPOSITION</button>
+                <button class="btn btn-outline" id="btn-stop">STOP</button>
+                <button class="btn btn-outline" id="btn-reset" style="border-color: #ef4444; color: #ef4444;">RESET FACTORS</button>
+            </div>
         </aside>
 
-        <main class="panel visuals">
-            <h3>Reconstruction Error (MSE)</h3>
-            <canvas id="errorChart"></canvas>
-            
-            <h3>Factor Matrices Preview</h3>
-            <div id="factorsGrid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-                <!-- Tables will go here -->
+        <main>
+            <div class="tabs">
+                <div class="tab active" data-tab="visualization">Reconstruction Viz</div>
+                <div class="tab" data-tab="factors">Factor Matrices</div>
+                <div class="tab" data-tab="analytics">Analytics</div>
+            </div>
+
+            <!-- Tab: Visualization -->
+            <div class="tab-content active" id="tab-visualization">
+                <div id="viz-panel">
+                    <div class="viz-grid">
+                        <div class="canvas-card">
+                            <label>ORIGINAL TENSOR SLICE</label>
+                            <div id="canvas-container">
+                                <canvas id="canvas-original"></canvas>
+                            </div>
+                            <div class="slice-mse" id="mse-original">Active Density: 0.00%</div>
+                        </div>
+                        <div class="canvas-card">
+                            <label>RECONSTRUCTED (CP-DECOMP)</label>
+                            <div id="canvas-container">
+                                <canvas id="canvas-recon"></canvas>
+                            </div>
+                            <div class="slice-mse" id="mse-recon">Slice MSE: 0.0000</div>
+                        </div>
+                    </div>
+                    
+                    <div class="canvas-card" style="width: 100%; max-width: 600px;">
+                        <label>ERROR HEATMAP (RESIDUALS)</label>
+                        <div id="canvas-container" style="width: 100%; display: flex; justify-content: center;">
+                            <canvas id="canvas-error"></canvas>
+                        </div>
+                        <div class="slice-mse" id="mse-error">Mean Absolute Error: 0.0000</div>
+                    </div>
+
+                    <div class="control-group" style="width: 400px; background: #1c1c22; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <label id="slice-label">Z-Slice: 0</label>
+                            <span id="slice-val" style="font-family: 'JetBrains Mono'; color: var(--primary);">0</span>
+                        </div>
+                        <input type="range" id="slice-slider" min="0" max="7" value="0" style="width: 100%;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Factors -->
+            <div class="tab-content" id="tab-factors">
+                <div class="matrix-grid">
+                    <div class="matrix-card">
+                        <label>Factor A (Users)</label>
+                        <div class="matrix-table-container" id="table-a"></div>
+                    </div>
+                    <div class="matrix-card">
+                        <label>Factor B (Movies)</label>
+                        <div class="matrix-table-container" id="table-b"></div>
+                    </div>
+                    <div class="matrix-card">
+                        <label>Factor C (Genres)</label>
+                        <div class="matrix-table-container" id="table-c"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-analytics">
+                <div class="analytics-grid">
+                    <div class="matrix-card">
+                        <label>RECONSTRUCTION ERROR (MSE)</label>
+                        <div style="height: 300px; position: relative; margin-top: 1rem;">
+                            <canvas id="error-chart"></canvas>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                        <div class="matrix-card">
+                            <label>DATASET PROFILE</label>
+                            <div id="stats-summary" style="margin-top: 1rem; color: var(--text-dim); line-height: 1.6; font-size: 0.85rem;">
+                                Load a dataset to see summary...
+                            </div>
+                        </div>
+                        <div class="matrix-card">
+                            <label>DECOMPOSITION STATUS</label>
+                            <div id="status-details" style="margin-top: 1rem; color: var(--text-dim); line-height: 1.6; font-size: 0.85rem;">
+                                <strong>Status:</strong> <span id="decomp-status">IDLE</span><br>
+                                <strong>Converged:</strong> <span id="decomp-converged">No</span><br>
+                                <strong>Final MSE:</strong> <span id="decomp-mse">N/A</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
 
-    <script type="module">
-        // Connection to Hypercube Neo logic
-        document.getElementById('rankRange').oninput = (e) => {
-            document.getElementById('rankVal').innerText = e.target.value;
-        };
+    <div id="hud-container">
+        <div class="hud-item"><span>Compute:</span> <span class="hud-val" id="hud-compute">0.00 ms</span></div>
+        <div class="hud-item"><span>Iter:</span> <span class="hud-val" id="hud-iter">0/100</span></div>
+        <div class="hud-item"><span>Error:</span> <span class="hud-val" id="hud-error">0.0000</span></div>
+    </div>
 
-        const ctx = document.getElementById('errorChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'MSE Error',
-                    borderColor: '#38bdf8',
-                    data: [],
-                    fill: false,
-                    tension: 0.1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: { type: 'logarithmic', beginAtZero: false }
-                }
-            }
+    <script type="module" src="./tensor-cp.ts"></script>
+    <script>
+        // Tab system
+        const tabs = document.querySelectorAll('.tab');
+        const contents = document.querySelectorAll('.tab-content');
+        tabs.forEach(t => {
+            t.onclick = () => {
+                const target = t.getAttribute('data-tab');
+                tabs.forEach(x => x.classList.remove('active'));
+                contents.forEach(x => x.classList.remove('active'));
+                t.classList.add('active');
+                document.getElementById('tab-' + target).classList.add('active');
+            };
         });
-
-        document.getElementById('runBtn').onclick = () => {
-            const backend = document.getElementById('backendChoice').value;
-            window.location.href = `./${backend}/tensor-cp.html?rank=${document.getElementById('rankRange').value}&backend=${backend}`;
-        };
     </script>
 </body>
 </html>

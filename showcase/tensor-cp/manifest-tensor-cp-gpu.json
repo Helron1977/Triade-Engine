@@ -9,21 +9,22 @@
       { "name": "mode_a", "type": "factor", "isSynchronized": true },
       { "name": "mode_b", "type": "factor", "isSynchronized": true },
       { "name": "mode_c", "type": "factor", "isSynchronized": true },
-      { "name": "target", "type": "tensor", "isSynchronized": true }
+      { "name": "target", "type": "tensor", "isSynchronized": true },
+      { "name": "reconstruction", "type": "tensor", "isSynchronized": true }
     ],
     "parameters": {
-      "rank": { "name": "Rank", "type": "number", "default": 3 },
-      "maxIterations": { "name": "Max Iterations", "type": "number", "default": 30 },
+      "rank": { "name": "Rank", "type": "number", "default": 10 },
+      "maxIterations": { "name": "Max Iterations", "type": "number", "default": 100 },
       "tolerance": { "name": "Tolerance", "type": "number", "default": 0.0001 },
-      "regularization": { "name": "Regularization", "type": "number", "default": 0.001 }
+      "regularization": { "name": "Regularization", "type": "number", "default": 0.05 }
     },
     "rules": [
       {
         "type": "neo-tensor-cp-v1",
         "source": "target",
         "params": {
-          "rank": 3,
-          "regularization": 0.001
+          "rank": 10,
+          "regularization": 0.05
         }
       }
     ],
@@ -33,16 +34,17 @@
     }
   },
   "config": {
-    "dimensions": { "nx": 5, "ny": 5, "nz": 3 },
+    "dimensions": { "nx": 32, "ny": 32, "nz": 8 },
     "chunks": { "x": 1, "y": 1 },
     "boundaries": {},
     "mode": "gpu",
+    "executionMode": "parallel",
     "engine": "tensor-cp",
     "params": {
-      "rank": 3,
-      "maxIterations": 30,
+      "rank": 10,
+      "maxIterations": 100,
       "tolerance": 0.0001,
-      "regularization": 0.001
+      "regularization": 0.05
     }
   }
 }

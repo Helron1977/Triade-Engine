@@ -10,6 +10,7 @@ export interface RenderOptions {
     obstaclesFace?: number;
     vorticityFace?: number; // Deprecated, use auxiliaryFaces
     sliceZ?: number;
+    reconFaceIndex?: number; // Used for calculating residuals (abs diff)
     criteria?: { faceIndex: number, weight: number, distanceThreshold?: number }[];
     criteriaSDF?: { xFace: number, yFace: number, weight: number, distanceThreshold: number }[];
     auxiliaryFaces?: number[]; // [0]=vorticity, [1]=vx, [2]=vy, etc.
@@ -62,6 +63,7 @@ export class CanvasAdapterNeo {
         };
 
         const physFaceIdx = getPhysicalSlot(options.faceIndex);
+        const physReconIdx = getPhysicalSlot(options.reconFaceIndex);
         const physObsIdx  = getPhysicalSlot(options.obstaclesFace);
         const physVortIdx = getPhysicalSlot(options.vorticityFace);
         const auxIndices  = (options.auxiliaryFaces || []).map(idx => getPhysicalSlot(idx));
@@ -102,6 +104,7 @@ export class CanvasAdapterNeo {
         for (const chunk of neo.vGrid.chunks) {
             const faces = neo.bridge.getChunkViews(chunk.id);
             const data = physFaceIdx !== undefined ? faces[physFaceIdx] : null;
+            const reconData = physReconIdx !== undefined ? faces[physReconIdx] : null;
             const obsData = physObsIdx !== undefined ? faces[physObsIdx] : null;
 
             // Resolve criteria views for this chunk (pre-loop)
@@ -154,7 +157,12 @@ export class CanvasAdapterNeo {
                         continue;
                     }
 
-                    const val = data ? data[srcIdx] : 0.0;
+                    let val = data ? data[srcIdx] : 0.0;
+                    if (reconData) {
+                        // Residual / Error mode
+                        val = Math.abs(val - reconData[srcIdx]);
+                    }
+
                     coloringCtx.srcIdx = srcIdx;
                     coloringCtx.worldX = worldX;
 

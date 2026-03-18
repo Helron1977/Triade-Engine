@@ -88,6 +88,60 @@ ColormapRegistry.register('heatmap', (val, ctx) => {
     return (a << 24) | (b << 16) | (g << 8) | r;
 });
 
+ColormapRegistry.register('magma', (val, ctx) => {
+    const s = Math.max(0, Math.min(1.0, (val - ctx.minV) * ctx.invRange));
+    // Simplified Magma-like gradient (Dark Purple -> Pink -> Orange -> Yellow)
+    let r, g, b;
+    if (s < 0.25) {
+        const t = s / 0.25;
+        r = 5 + 40 * t; g = 5 + 10 * t; b = 25 + 60 * t;
+    } else if (s < 0.5) {
+        const t = (s - 0.25) / 0.25;
+        r = 45 + 140 * t; g = 15 + 30 * t; b = 85 + 40 * t;
+    } else if (s < 0.75) {
+        const t = (s - 0.5) / 0.25;
+        r = 185 + 70 * t; g = 45 + 100 * t; b = 125 - 60 * t;
+    } else {
+        const t = (s - 0.75) / 0.25;
+        r = 255; g = 145 + 110 * t; b = 65 + 120 * t;
+    }
+    return (255 << 24) | (Math.floor(b) << 16) | (Math.floor(g) << 8) | Math.floor(r);
+});
+
+ColormapRegistry.register('inferno', (val, ctx) => {
+    const s = Math.max(0, Math.min(1.0, (val - ctx.minV) * ctx.invRange));
+    // Simplified Inferno (Black -> Red -> Orange -> Yellow)
+    let r, g, b;
+    if (s < 0.33) {
+        const t = s / 0.33;
+        r = 255 * t; g = 0; b = 0;
+    } else if (s < 0.66) {
+        const t = (s - 0.33) / 0.33;
+        r = 255; g = 255 * t * 0.6; b = 0;
+    } else {
+        const t = (s - 0.66) / 0.34;
+        r = 255; g = 153 + 102 * t; b = 255 * t;
+    }
+    return (255 << 24) | (Math.floor(b) << 16) | (Math.floor(g) << 8) | Math.floor(r);
+});
+
+ColormapRegistry.register('viridis', (val, ctx) => {
+    const s = Math.max(0, Math.min(1.0, (val - ctx.minV) * ctx.invRange));
+    // Simplified Viridis (Purple -> Blue -> Green -> Yellow)
+    let r, g, b;
+    if (s < 0.33) {
+        const t = s / 0.33;
+        r = 68 - 30 * t; g = 1 - 1 * t; b = 84 + 100 * t;
+    } else if (s < 0.66) {
+        const t = (s - 0.33) / 0.33;
+        r = 38 + 50 * t; g = 0 + 150 * t; b = 184 - 50 * t;
+    } else {
+        const t = (s - 0.66) / 0.34;
+        r = 88 + 167 * t; g = 150 + 105 * t; b = 134 - 134 * t;
+    }
+    return (255 << 24) | (Math.floor(b) << 16) | (Math.floor(g) << 8) | Math.floor(r);
+});
+
 ColormapRegistry.register('heatmap-criteria', (val, ctx) => {
     let r = 180, g = 220, b = 255, a = 255;
     const criteria = ctx.options.criteria || [];
