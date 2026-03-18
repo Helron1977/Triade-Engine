@@ -5,8 +5,14 @@ This showcase demonstrates the power of **Hypercube Neo** for high-dimensional d
 ![Tensor-CP Dashboard](../../docs/media/tensor_cp_dashboard.png)
 *Behold: Pure ALS WebGPU Decomposition running in the browser. MSE descending smoothly with live factor matrix population.*
 
+![Tensor-CP Power Proof](../../docs/media/tensor_cp_power_proof.png)
+*Power Proof: Convergence to MSE < 0.1 (0.0643) on a 64x64x12 structured grid (49,152 cells).*
+
 ![Tensor-CP Demo](../../docs/media/tensor_cp_demo.webp)
 *Interactive session: Loading MovieLens sample and running decomposition.*
+
+![Tensor-CP Power Demo](../../docs/media/tensor_cp_power_proof.webp)
+*Power Demo: Structured convergence verification at scale.*
 
 ## Why Hypercube for Tensors?
 

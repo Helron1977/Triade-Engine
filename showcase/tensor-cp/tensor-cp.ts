@@ -20,6 +20,7 @@ async function initUI() {
     const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
     const btnExport = document.getElementById('btn-export') as HTMLButtonElement;
     const btnLoadSample = document.getElementById('btn-load-sample') as HTMLButtonElement;
+    const btnLoadPower = document.getElementById('btn-load-power') as HTMLButtonElement;
     const btnReset = document.getElementById('btn-reset') as HTMLButtonElement;
     const csvUpload = document.getElementById('csv-upload') as HTMLInputElement;
     const sliceSlider = document.getElementById('slice-slider') as HTMLInputElement;
@@ -29,7 +30,8 @@ async function initUI() {
     btnRun.onclick = () => startDecomposition();
     btnStop.onclick = () => stopDecomposition();
     btnExport.onclick = () => exportFactors();
-    btnLoadSample.onclick = () => loadSample();
+    btnLoadSample.onclick = () => loadSample('tensor-sample.csv');
+    btnLoadPower.onclick = () => loadSample('power-tensor.csv');
     btnReset.onclick = () => resetFactors();
     
     csvUpload.onchange = async (e: any) => {
@@ -77,13 +79,14 @@ function initChart() {
     });
 }
 
-async function loadSample() {
+async function loadSample(filename: string = 'tensor-sample.csv') {
     try {
-        const response = await fetch('../assets/sample-tensor.csv');
+        const response = await fetch(`../assets/${filename}`);
         const text = await response.text();
         handleCSV(text);
+        console.log(`Loaded ${filename} successfully.`);
     } catch (e) {
-        console.error("Failed to load sample CSV", e);
+        console.error(`Failed to load ${filename}`, e);
     }
 }
 
@@ -262,6 +265,7 @@ async function startDecomposition() {
     document.getElementById('decomp-status')!.innerText = 'RUNNING';
     document.getElementById('decomp-status')!.style.color = '#6366f1';
     console.log("Entering simulation loop...");
+    lastMSE = Infinity;
     loop();
 }
 
@@ -271,10 +275,13 @@ function stopDecomposition() {
     document.getElementById('decomp-status')!.style.color = '#ef4444';
 }
 
+let lastMSE = Infinity;
+
 async function loop() {
     if (!isRunning || !engine) return;
 
-    const maxIter = parseInt((document.getElementById('param-iter') as HTMLInputElement).value);
+    const maxIter = parseInt((document.getElementById('param-iter') as HTMLInputElement).value) || 500;
+    const threshold = 0.0001;
     const start = performance.now();
     
     try {
@@ -286,11 +293,19 @@ async function loop() {
         }
 
         const error = calculateMSE();
-        errorHistory.push(error);
         
-        if (currentIteration % 10 === 0) {
-            console.log(`Iteration ${currentIteration}/${maxIter}, MSE: ${error.toFixed(6)}, Time: ${ms.toFixed(2)}ms`);
+        // Early Stopping
+        const delta = Math.abs(lastMSE - error);
+        if (delta < threshold && currentIteration > 10) {
+            console.log(`Early stopping triggered: delta=${delta.toFixed(6)} < ${threshold}`);
+            isRunning = false;
+            document.getElementById('decomp-status')!.innerHTML = 'Status: <span style="color: #4ade80">CONVERGED</span>';
+            updateHUD(ms, error);
+            updateFactorTables();
+            renderFrame();
+            return;
         }
+        lastMSE = error;
 
         updateHUD(ms, error);
         updateChart(error);
@@ -300,14 +315,12 @@ async function loop() {
         currentIteration++;
         if (currentIteration < maxIter && isRunning) {
             requestAnimationFrame(loop);
-        } else {
-            console.log("Decomposition finished.");
+            console.log("Decomposition finished (max iterations).");
             isRunning = false;
-            document.getElementById('decomp-status')!.innerText = currentIteration >= maxIter ? 'COMPLETED' : 'STOPPED';
-            document.getElementById('decomp-status')!.style.color = currentIteration >= maxIter ? '#22c55e' : '#ef4444';
+            document.getElementById('decomp-status')!.innerText = 'COMPLETED';
+            document.getElementById('decomp-status')!.style.color = '#22c55e';
             document.getElementById('decomp-mse')!.innerText = error.toFixed(6);
-            document.getElementById('decomp-converged')!.innerText = error < 0.001 ? 'Yes' : 'No';
-            
+            document.getElementById('decomp-delta')!.innerText = delta.toFixed(6);
             updateHUD(ms, error);
             updateFactorTables();
             renderFrame();
@@ -340,9 +353,12 @@ function calculateMSE(): number {
 
 function updateHUD(ms: number, error: number) {
     const maxIter = (document.getElementById('param-iter') as HTMLInputElement).value;
+    const delta = Math.abs(lastMSE - error);
     document.getElementById('hud-compute')!.innerText = `${ms.toFixed(2)} ms`;
     document.getElementById('hud-iter')!.innerText = `${currentIteration}/${maxIter}`;
-    document.getElementById('hud-error')!.innerText = error.toFixed(4);
+    document.getElementById('hud-error')!.innerText = `${error.toFixed(4)} / ${delta.toFixed(6)}`;
+    document.getElementById('decomp-mse')!.innerText = error.toFixed(6);
+    document.getElementById('decomp-delta')!.innerText = delta.toFixed(6);
 }
 
 function updateChart(error: number) {
