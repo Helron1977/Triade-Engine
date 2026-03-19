@@ -151,15 +151,14 @@ export class GpuDispatcher implements IDispatcher {
 
                 u32Data[base + 17] = findFirstIdx(['vx', 'temperature'], 'write');
                 u32Data[base + 18] = getIdx('vy', 'write');
-                u32Data[base + 19] = findFirstIdx(['vorticity', 'rho'], 'write');
+                u32Data[base + 19] = findFirstIdx(['vorticity', 'rho', 'water_h'], 'write');
                 u32Data[base + 20] = findFirstIdx(['smoke', 'biology'], 'write');
-
-                u32Data[base + 21] = this.faceIndexCache.get('f0') || 0;
+                u32Data[base + 21] = this.faceIndexCache.get('f0') || 0; // fBase!
 
                 if (scheme.type === 'neo-sdf') {
                     u32Data[base + 22] = Math.floor(t);
                     u32Data[base + 23] = this.faceIndexCache.get(scheme.source + '_x') || 0;
-                    u32Data[base + 30] = this.faceIndexCache.get(scheme.source + '_y') || 0;
+                    u32Data[base + 24] = this.faceIndexCache.get(scheme.source + '_y') || 0;
                 } else if (scheme.type === 'neo-ocean-v1') {
                     f32Data[base + 22] = (scheme.params?.bioDiffusion as number) ?? 0.001;
                     f32Data[base + 23] = (scheme.params?.bioGrowth as number) ?? 0.01;
