@@ -232,10 +232,14 @@ export class GpuDispatcher implements IDispatcher {
                     const ny_chunk = vChunk.localDimensions.ny;
                     const nz_chunk = this.vGrid.dimensions.nz || 1;
                     passEncoder.dispatchWorkgroups(Math.ceil(nx_chunk / 8), Math.ceil(ny_chunk / 8), nz_chunk);
+                } else if (scheme.type === 'neo-ocean-v1') {
+                    const nx_chunk = vChunk.localDimensions.nx;
+                    const nz_chunk = this.vGrid.dimensions.nz || 1;
+                    passEncoder.dispatchWorkgroups(Math.ceil(nx_chunk / 16), Math.ceil(nz_chunk / 16), 1);
                 } else {
                     const nx_chunk = vChunk.localDimensions.nx;
                     const ny_chunk = vChunk.localDimensions.ny;
-                    passEncoder.dispatchWorkgroups(Math.ceil(nx_chunk / 16), Math.ceil(ny_chunk / 16));
+                    passEncoder.dispatchWorkgroups(Math.ceil(nx_chunk / 16), Math.ceil(ny_chunk / 16), 1);
                 }
                 passEncoder.end();
             }

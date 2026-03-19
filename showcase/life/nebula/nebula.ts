@@ -257,7 +257,7 @@ class LifeNebula {
             const g = this.worldToGrid(this.shark.position);
             (this.engine.dispatcher as any).setRuleParams('neo-ocean-v1', {
                 objects: [
-                    { pos: { x: g.x, y: g.z }, dim: { x: 6, y: 6 }, isObstacle: 0, biology: 0, objType: 1, rho: 5.0 }, // Stronger Injection
+                    { pos: { x: g.x, y: g.z }, dim: { x: 7, y: 7 }, isObstacle: 0, biology: 0, objType: 1, rho: 8.0 }, // ULTIMATE IMPACT
                     ...new Array(7).fill({ pos: { x: -1000, y: -1000 }, dim: { x: 1, y: 1 }, isObstacle: 0, biology: 0, objType: 0, rho: 0 })
                 ]
             });
