@@ -120,31 +120,38 @@ export class MasterBuffer implements IMasterBuffer {
      */
     public async syncFacesToHost(faceIndices: number[]): Promise<void> {
         if (!this.gpuBuffer) return;
-        const copySize = this.strideFace * 4;
+        const bytesPerFaceAligned = this.strideFace * 4;
 
-        // Create staging buffers for the required faces
-        const stagingBuffers = faceIndices.map(() => HypercubeGPUContext.device.createBuffer({
-            size: copySize,
+        // Map logical face indices to physical slots (accounting for ping-pongs)
+        const dataContract = (this.vGrid as any).dataContract as DataContract;
+        const faceMappings = dataContract.getFaceMappings();
+        const physicalIndices = faceIndices.map(logicalIdx => {
+            let pIdx = 0;
+            for (let i = 0; i < logicalIdx; i++) {
+                pIdx += faceMappings[i].isPingPong ? 2 : 1;
+            }
+            // For ping-pong faces, we sync the 'read' buffer (parity is handled in CPU bridge if needed, 
+            // but for simple showcases we assume the primary slot is the one we want).
+            return pIdx;
+        });
+
+        const stagingBuffers = physicalIndices.map(() => HypercubeGPUContext.device.createBuffer({
+            size: bytesPerFaceAligned,
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
         }));
 
         const encoder = HypercubeGPUContext.device.createCommandEncoder();
-
-        // Command the GPU to copy each face into its respective staging buffer
-        faceIndices.forEach((fIdx, i) => {
-            // Note: Since chunks are contiguous, if we had multiple chunks we'd need multiple copies or a sparse readback.
-            // For GPU zero-stall, we typically operate on 1 chunk. We'll copy the face block directly.
-            // A more robust implementation would iterate chunks. Assuming 1 chunk.
-            encoder.copyBufferToBuffer(this.gpuBuffer!, fIdx * copySize, stagingBuffers[i], 0, copySize);
+        physicalIndices.forEach((pIdx, i) => {
+            encoder.copyBufferToBuffer(this.gpuBuffer!, pIdx * bytesPerFaceAligned, stagingBuffers[i], 0, bytesPerFaceAligned);
         });
 
         HypercubeGPUContext.device.queue.submit([encoder.finish()]);
 
         await Promise.all(stagingBuffers.map(b => b.mapAsync(GPUMapMode.READ)));
 
-        faceIndices.forEach((fIdx, i) => {
+        physicalIndices.forEach((pIdx, i) => {
             const data = new Float32Array(stagingBuffers[i].getMappedRange());
-            const cpuView = new Float32Array(this.rawBuffer, fIdx * copySize, this.strideFace);
+            const cpuView = new Float32Array(this.rawBuffer, pIdx * bytesPerFaceAligned, this.strideFace);
             cpuView.set(data);
             stagingBuffers[i].unmap();
             stagingBuffers[i].destroy();
