@@ -241,6 +241,9 @@ export class GpuDispatcher implements IDispatcher {
                 passEncoder.end();
             }
         }
+        // 3. Upload Aligned Uniforms to GPU
+        this.device.queue.writeBuffer(this.uniformBuffer!, 0, u32Data.buffer);
+
         this.device.queue.submit([commandEncoder.finish()]);
     }
 
