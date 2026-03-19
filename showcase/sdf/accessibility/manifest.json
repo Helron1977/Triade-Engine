@@ -1,0 +1,43 @@
+{
+    "$schema": "../../../manifest-schema.json",
+    "name": "Paris Accessibility SDF Engine",
+    "version": "1.0.0",
+    "engine": {
+        "name": "PARIS-SDF",
+        "version": "1.0.0",
+        "requirements": {
+            "ghostCells": 1,
+            "pingPong": true
+        },
+        "faces": [
+            { "name": "obstacles", "type": "scalar", "isSynchronized": false, "isReadOnly": true },
+            { "name": "sdf_metro_x", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_metro_y", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_school_x", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_school_y", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_park_x", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_park_y", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_hospital_x", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_hospital_y", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_water_x", "type": "scalar", "isSynchronized": true },
+            { "name": "sdf_water_y", "type": "scalar", "isSynchronized": true }
+        ],
+        "rules": [
+            { "type": "neo-sdf", "source": "sdf_metro" },
+            { "type": "neo-sdf", "source": "sdf_school" },
+            { "type": "neo-sdf", "source": "sdf_park" },
+            { "type": "neo-sdf", "source": "sdf_hospital" },
+            { "type": "neo-sdf", "source": "sdf_water" }
+        ]
+    },
+    "config": {
+        "mode": "cpu",
+        "executionMode": "parallel",
+        "dimensions": { "nx": 512, "ny": 512, "nz": 1 },
+        "chunks": { "x": 1, "y": 1 },
+
+        "boundaries": { "all": { "role": "wall" } },
+        "engine": "PARIS-SDF",
+        "params": { "pixelScale": 2.0 }
+    }
+}

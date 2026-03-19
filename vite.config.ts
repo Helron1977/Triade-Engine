@@ -14,7 +14,7 @@ export default defineConfig({
         headers: {
             // Essential for SharedArrayBuffer multithreading
             'Cross-Origin-Opener-Policy': 'same-origin',
-            'Cross-Origin-Embedder-Policy': 'require-corp',
+            'Cross-Origin-Embedder-Policy': 'credentialless',
         }
     }
 });

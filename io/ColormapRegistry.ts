@@ -176,38 +176,78 @@ ColormapRegistry.register('heatmap-criteria', (val, ctx) => {
     return (a << 24) | (b << 16) | (g << 8) | r;
 });
 
-ColormapRegistry.register('spatial-decision', (val, ctx) => {
-    let r = 0, g = 0, b = 0, a = 0;
+ColormapRegistry.register('accessibility-sdf', (val, ctx) => {
+    // val is the primary face value (usually Face 0: obstacles/buildings)
+    if (val > 0.5) {
+        // Render building as a technical dark gray overlay
+        return 0xff333333; 
+    }
+
     const criteriaSDF = ctx.options.criteriaSDF || [];
     const criteriaSDFFaces = (ctx.options as any).resolvedCriteriaSDFFaces || [];
     let sumW = 0;
     for (let i = 0; i < criteriaSDF.length; i++) sumW += criteriaSDF[i].weight;
 
-    if (sumW > 0) {
-        let score = 0;
-        for (let i = 0; i < criteriaSDF.length; i++) {
-            const weight = criteriaSDF[i].weight;
-            if (weight === 0) continue;
-            const seedX = criteriaSDFFaces[i].x[ctx.srcIdx];
-            const seedY = criteriaSDFFaces[i].y[ctx.srcIdx];
-            if (seedX < -9000 || seedY < -9000) continue;
-            const dx = ctx.worldX - seedX;
-            const dy = ctx.worldY - seedY;
-            const distMeters = Math.sqrt(dx * dx + dy * dy) * 2.0;
-            const distThresh = criteriaSDF[i].distanceThreshold;
-            let sLoc = 0;
-            if (distMeters <= distThresh) sLoc = Math.pow(1.0 - (distMeters / distThresh), 0.5);
-            score += (weight / sumW) * sLoc;
+    if (sumW === 0) return 0x00000000;
+
+    let totalScore = 0;
+    let numActiveTypes = 0;
+    let minDistance = 999999;
+    const pixelScale = ctx.options.pixelScale || 2.0;
+
+    for (let i = 0; i < criteriaSDF.length; i++) {
+        const weight = criteriaSDF[i].weight;
+        if (weight === 0) continue;
+        const faceSet = criteriaSDFFaces[i];
+        if (!faceSet || !faceSet.x || !faceSet.y) continue;
+
+        const seedX = faceSet.x[ctx.srcIdx];
+        const seedY = faceSet.y[ctx.srcIdx];
+        if (seedX < -9000 || seedY < -9000) continue;
+
+        const dx = ctx.worldX - seedX;
+        const dy = ctx.worldY - seedY;
+        const distMeters = Math.sqrt(dx * dx + dy * dy) * pixelScale;
+        if (distMeters < minDistance) minDistance = distMeters;
+
+        const distThresh = criteriaSDF[i].distanceThreshold || 1000;
+        let sLoc = 0;
+        if (distMeters <= distThresh) {
+            sLoc = Math.pow(1.0 - (distMeters / distThresh), 1.2);
+            // Intersection tracking: count how many criteria are actually "good" here
+            if (sLoc > 0.3) numActiveTypes++; 
         }
-        
-        const steps = 6;
-        const qS = Math.floor(score * steps) / steps;
-        if (qS <= 0.05) { r = 0; g = 0; b = 0; a = 0; }
-        else if (qS < 0.2) { r = 14; g = 110; b = 180; a = 150; }
-        else if (qS < 0.4) { r = 6; g = 182; b = 212; a = 180; }
-        else if (qS < 0.6) { r = 234; g = 179; b = 8; a = 200; }
-        else if (qS < 0.8) { r = 132; g = 204; b = 22; a = 220; }
-        else { r = 34; g = 197; b = 94; a = 255; }
+        totalScore += (weight / sumW) * sLoc;
     }
-    return (a << 24) | (b << 16) | (g << 8) | r;
+
+    // Add a "Diversity Boost": if multiple types are present, shift the color or intensity
+    // Intersection bonus: +10% score per additional type
+    if (numActiveTypes > 1) {
+        totalScore = Math.min(1.2, totalScore + (numActiveTypes - 1) * 0.1);
+    }
+
+    // --- Visualization: Premium Violet-Orange Palette ---
+    const s = Math.max(0, Math.min(1.0, totalScore));
+    if (s < 0.01 && minDistance > 1000) return 0x00000000; // Clip far away areas
+
+    let r = 25 * (1 - s) + 255 * s;
+    let g = 12 * (1 - s) + 160 * s;
+    let b = 45 * (1 - s) + 40 * s;
+    let a = Math.min(255, 60 + s * 195); // Slightly higher base alpha
+
+    // --- Iso-lines (Contours) ---
+    const contourThickness = 6.0; // Slightly thicker for visibility
+    const isContour = (minDistance > 0) && (
+        Math.abs(minDistance - 200) < contourThickness ||
+        Math.abs(minDistance - 500) < contourThickness ||
+        Math.abs(minDistance - 1000) < contourThickness
+    );
+
+    if (isContour) {
+        // Golden/Yellow contours for better contrast
+        r = 255; g = 200; b = 50; a = 255;
+    }
+
+    return (Math.floor(a) << 24) | (Math.floor(b) << 16) | (Math.floor(g) << 8) | Math.floor(r);
 });
+
