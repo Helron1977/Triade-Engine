@@ -361,6 +361,18 @@ class LifeNebula {
         const hData = bridge.getFaceData(chunk.id, 'water_h');
         const pAttr = this.waterGeo.attributes.position;
         const gy = NY - 1; 
+
+        // DIAGNOSTIC: Check data range every 100 frames
+        if (Math.floor(Date.now() / 16) % 100 === 0) {
+            let min = 100, max = -100, sum = 0;
+            for(let k=0; k<hData.length; k++) {
+                if (hData[k] < min) min = hData[k];
+                if (hData[k] > max) max = hData[k];
+                sum += hData[k];
+            }
+            console.debug(`Nebula Diagnostics: Water Data [Min: ${min.toFixed(4)}, Max: ${max.toFixed(4)}, Avg: ${(sum/hData.length).toFixed(4)}]`);
+        }
+
         for (let j=0; j<NZ; j++) {
             for (let i=0; i<NX; i++) {
                 const vertIdx = j * NX + i;

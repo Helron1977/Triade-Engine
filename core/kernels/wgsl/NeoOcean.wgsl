@@ -145,7 +145,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var vx = (pf[1] + pf[5] + pf[8] - (pf[3] + pf[6] + pf[7])) * invRho;
     var vy = (pf[2] + pf[5] + pf[6] - (pf[4] + pf[7] + pf[8])) * invRho;
 
-    data[rhoIdx] = rho; data[vxIdx] = vx; data[vyIdx] = vy;
+    // --- DIAGNOSTIC TEST PATTERN ---
+    let testRho = 1.0 + (f32(id.x) / 64.0) * 0.5 + (f32(id.y) / 64.0) * 0.5;
+    data[rhoIdx] = testRho; 
+    data[vxIdx] = vx; data[vyIdx] = vy;
     let u2 = 1.5 * (vx * vx + vy * vy); let invTau = 1.0 / params.omega;
     
     for (var d = 0u; d < 9u; d = d + 1u) {
