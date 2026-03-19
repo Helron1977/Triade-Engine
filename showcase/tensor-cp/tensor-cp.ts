@@ -315,6 +315,7 @@ async function loop() {
         currentIteration++;
         if (currentIteration < maxIter && isRunning) {
             requestAnimationFrame(loop);
+        } else {
             console.log("Decomposition finished (max iterations).");
             isRunning = false;
             document.getElementById('decomp-status')!.innerText = 'COMPLETED';
@@ -371,38 +372,153 @@ function updateChart(error: number) {
     chart.update('none');
 }
 
+function computeDataRange(): { min: number; max: number } {
+    if (!engine) return { min: 0, max: 1 };
+    const views = engine.bridge.getChunkViews(engine.vGrid.chunks[0].id);
+    const target = views[3];
+    let minVal = Infinity, maxVal = -Infinity;
+    for (let i = 0; i < target.length; i++) {
+        const v = target[i];
+        if (v > 0) {
+            if (v < minVal) minVal = v;
+            if (v > maxVal) maxVal = v;
+        }
+    }
+    if (!isFinite(minVal)) return { min: 0, max: 1 };
+    const range = maxVal - minVal || 1;
+    return { min: Math.max(0, minVal - range * 0.05), max: maxVal + range * 0.1 };
+}
+
+function computeReconRange(): { min: number; max: number } {
+    if (!engine) return { min: 0, max: 1 };
+    const views = engine.bridge.getChunkViews(engine.vGrid.chunks[0].id);
+    const recon = views[4];
+    // Scan only cells where recon has meaningful predictions (from observed entries)
+    const target = views[3];
+    let minVal = Infinity, maxVal = -Infinity;
+    for (let i = 0; i < recon.length; i++) {
+        if (target[i] > 0) { // Only look at observed positions
+            const v = recon[i];
+            if (v < minVal) minVal = v;
+            if (v > maxVal) maxVal = v;
+        }
+    }
+    if (!isFinite(minVal)) {
+        // Fall back to full recon range if nothing observed yet
+        for (let i = 0; i < recon.length; i++) {
+            if (recon[i] !== 0) {
+                if (recon[i] < minVal) minVal = recon[i];
+                if (recon[i] > maxVal) maxVal = recon[i];
+            }
+        }
+    }
+    if (!isFinite(minVal)) return { min: 0, max: 1 };
+    const range = maxVal - minVal || 1;
+    return { min: Math.max(0, minVal - range * 0.05), max: maxVal + range * 0.1 };
+}
+
+/** Inferno palette (5 stops): black → purple → red → orange → yellow/white */
+const INFERNO_PALETTE: [number, number, number][] = [
+    [0, 0, 4], [120, 28, 109], [238, 75, 43], [253, 173, 54], [252, 255, 164]
+];
+
+function samplePalette(t: number, palette: [number, number, number][]): [number, number, number] {
+    t = Math.max(0, Math.min(1, t));
+    const n = palette.length - 1;
+    const idx = t * n;
+    const lo = Math.floor(idx);
+    const hi = Math.min(lo + 1, n);
+    const f = idx - lo;
+    const [r1, g1, b1] = palette[lo];
+    const [r2, g2, b2] = palette[hi];
+    return [r1 + (r2 - r1) * f, g1 + (g2 - g1) * f, b1 + (b2 - b1) * f];
+}
+
+/**
+ * Draws the error heatmap for ALL cells on the slice.
+ * - Observed cells (target > 0): show |target - recon| (fit quality)
+ * - Unobserved cells: show |recon| (reconstruction "hallucination")
+ * Scale is auto-set to 95th-percentile of errors to avoid saturation.
+ */
+function renderErrorMap(canvas: HTMLCanvasElement, sliceZ: number) {
+    const views = engine.bridge.getChunkViews(engine.vGrid.chunks[0].id);
+    const target = views[3];
+    const recon  = views[4];
+    const { nx, ny } = (engine.vGrid as any).config.dimensions;
+
+    if (canvas.width !== nx || canvas.height !== ny) {
+        canvas.width  = nx;
+        canvas.height = ny;
+        canvas.style.width  = '600px';
+        canvas.style.height = '600px';
+    }
+
+    const ctx = canvas.getContext('2d')!;
+    const imageData = ctx.createImageData(nx, ny);
+    const pixels = imageData.data; // Direct reference — NOT a copy
+    const sliceOffset = sliceZ * nx * ny;
+
+    // Collect all errors for this slice to compute 95th-percentile scale
+    const errors: number[] = [];
+    for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+            const idx = sliceOffset + j * nx + i;
+            const tgt = target[idx];
+            const rec = recon[idx];
+            const err = tgt > 0 ? Math.abs(tgt - rec) : Math.abs(rec);
+            errors.push(err);
+        }
+    }
+    errors.sort((a, b) => a - b);
+    const p95idx = Math.floor(errors.length * 0.95);
+    const maxErr = errors[p95idx] > 0 ? errors[p95idx] : 1;
+
+    // Draw pixels
+    for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+            const srcIdx  = sliceOffset + j * nx + i;
+            const dstIdx  = (j * nx + i) * 4;
+            const tgt = target[srcIdx];
+            const rec = recon[srcIdx];
+            const err = tgt > 0 ? Math.abs(tgt - rec) : Math.abs(rec);
+            const t   = Math.min(1, err / maxErr);
+            const [r, g, b] = samplePalette(t, INFERNO_PALETTE);
+            pixels[dstIdx]     = r;
+            pixels[dstIdx + 1] = g;
+            pixels[dstIdx + 2] = b;
+            pixels[dstIdx + 3] = 255;
+        }
+    }
+    ctx.putImageData(imageData, 0, 0);
+}
+
 function renderFrame() {
     if (!engine) return;
     const sliceZ = parseInt((document.getElementById('slice-slider') as HTMLInputElement).value);
-    console.log(`Rendering frame, Z-Slice: ${sliceZ}`);
-    
-    // 1. Original
+
+    const { min: dataMin, max: dataMax } = computeDataRange();
+    const { min: reconMin, max: reconMax } = computeReconRange();
+
+    // 1. Original tensor slice — use target data range
     CanvasAdapterNeo.render(engine as any, document.getElementById('canvas-original') as HTMLCanvasElement, {
-        faceIndex: 3, // Target
+        faceIndex: 3,
         colormap: 'magma',
-        minVal: 0,
-        maxVal: 5,
+        minVal: dataMin,
+        maxVal: dataMax,
         sliceZ: sliceZ
     });
 
-    // 2. Reconstruction
+    // 2. Reconstruction — use its own range so it's always visible
     CanvasAdapterNeo.render(engine as any, document.getElementById('canvas-recon') as HTMLCanvasElement, {
-        faceIndex: 4, // Reconstruction
+        faceIndex: 4,
         colormap: 'magma',
-        minVal: 0,
-        maxVal: 5,
+        minVal: reconMin,
+        maxVal: reconMax,
         sliceZ: sliceZ
     });
 
-    // 3. Error (Residuals) - Match target scale to see initial residuals clearly
-    CanvasAdapterNeo.render(engine as any, document.getElementById('canvas-error') as HTMLCanvasElement, {
-        faceIndex: 3, // Source (Target)
-        reconFaceIndex: 4, // Reconstruction to compare against
-        colormap: 'inferno', // Different colormap for error
-        minVal: 0,
-        maxVal: 1.5, // Better sensitivity for residuals
-        sliceZ: sliceZ
-    });
+    // 3. Error heatmap — custom draw, only at observed (target > 0) positions
+    renderErrorMap(document.getElementById('canvas-error') as HTMLCanvasElement, sliceZ);
 
     updateSliceMetrics(sliceZ);
 }

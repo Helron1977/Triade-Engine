@@ -248,7 +248,7 @@
             margin-top: 0.2rem;
         }
 
-        #canvas-container {
+        .canvas-container {
             background: #000;
             padding: 0.5rem;
             border-radius: 8px;
@@ -376,14 +376,14 @@
                     <div class="viz-grid">
                         <div class="canvas-card">
                             <label>ORIGINAL TENSOR SLICE</label>
-                            <div id="canvas-container">
+                            <div class="canvas-container">
                                 <canvas id="canvas-original"></canvas>
                             </div>
                             <div class="slice-mse" id="mse-original">Active Density: 0.00%</div>
                         </div>
                         <div class="canvas-card">
                             <label>RECONSTRUCTED (CP-DECOMP)</label>
-                            <div id="canvas-container">
+                            <div class="canvas-container">
                                 <canvas id="canvas-recon"></canvas>
                             </div>
                             <div class="slice-mse" id="mse-recon">Slice MSE: 0.0000</div>
@@ -392,7 +392,7 @@
                     
                     <div class="canvas-card" style="width: 100%; max-width: 600px;">
                         <label>ERROR HEATMAP (RESIDUALS)</label>
-                        <div id="canvas-container" style="width: 100%; display: flex; justify-content: center;">
+                        <div class="canvas-container" style="width: 100%; display: flex; justify-content: center;">
                             <canvas id="canvas-error"></canvas>
                         </div>
                         <div class="slice-mse" id="mse-error">Mean Absolute Error: 0.0000</div>
