@@ -21,6 +21,7 @@ async function initUI() {
     const btnExport = document.getElementById('btn-export') as HTMLButtonElement;
     const btnLoadSample = document.getElementById('btn-load-sample') as HTMLButtonElement;
     const btnLoadPower = document.getElementById('btn-load-power') as HTMLButtonElement;
+    const btnLoadSynthetic = document.getElementById('btn-load-synthetic') as HTMLButtonElement;
     const btnReset = document.getElementById('btn-reset') as HTMLButtonElement;
     const csvUpload = document.getElementById('csv-upload') as HTMLInputElement;
     const sliceSlider = document.getElementById('slice-slider') as HTMLInputElement;
@@ -32,6 +33,7 @@ async function initUI() {
     btnExport.onclick = () => exportFactors();
     btnLoadSample.onclick = () => loadSample('tensor-sample.csv');
     btnLoadPower.onclick = () => loadSample('power-tensor.csv');
+    btnLoadSynthetic.onclick = () => handleSynthetic();
     btnReset.onclick = () => resetFactors();
     
     csvUpload.onchange = async (e: any) => {
@@ -88,6 +90,61 @@ async function loadSample(filename: string = 'tensor-sample.csv') {
     } catch (e) {
         console.error(`Failed to load ${filename}`, e);
     }
+}
+
+async function handleSynthetic() {
+    if (!engine) await setupEngine();
+    const bridge = engine.bridge;
+    const chunkId = engine.vGrid.chunks[0].id;
+    const views = bridge.getChunkViews(chunkId);
+    const target = views[3];
+    const { nx, ny, nz } = (engine.vGrid as any).config.dimensions;
+
+    console.log("Generating Synthetic Rank-3 Tensor...");
+    
+    // 1. Create 3 small ground-truth factors for Rank 3
+    const groundRank = 3;
+    const trueA = new Float32Array(nx * groundRank);
+    const trueB = new Float32Array(ny * groundRank);
+    const trueC = new Float32Array(nz * groundRank);
+
+    // Fill with some patterns (Blocks/Waves)
+    for (let r = 0; r < groundRank; r++) {
+        for (let i = 0; i < nx; i++) trueA[i * groundRank + r] = Math.sin((i + r * 5) * 0.5) * 0.5 + 0.5;
+        for (let j = 0; j < ny; j++) trueB[j * groundRank + r] = Math.cos((j + r * 3) * 0.4) * 0.5 + 0.5;
+        for (let k = 0; k < nz; k++) trueC[k * groundRank + r] = (k === r || k === r + 4) ? 1.0 : 0.1;
+    }
+
+    // 2. Compute the Kruskal product to create the target tensor (Dense)
+    target.fill(0);
+    let entries = 0;
+    for (let k = 0; k < nz; k++) {
+        for (let j = 0; j < ny; j++) {
+            for (let i = 0; i < nx; i++) {
+                const idx = i + j * nx + k * nx * ny;
+                let val = 0;
+                for (let r = 0; r < groundRank; r++) {
+                    val += trueA[i * groundRank + r] * trueB[j * groundRank + r] * trueC[k * groundRank + r];
+                }
+                target[idx] = val;
+                if (val > 0) entries++;
+            }
+        }
+    }
+
+    // 3. Reset factors to random to start clean
+    for (const idx of [0, 1, 2]) {
+        views[idx].forEach((v: number, i: number, arr: Float32Array) => arr[i] = Math.random() * 0.5);
+    }
+
+    if (engine.vGrid.config.mode === 'gpu') {
+        await bridge.syncToDevice();
+    }
+
+    currentIteration = 0;
+    lastMSE = 0;
+    renderFrame();
+    updateHUD(0, calculateMSE());
 }
 
 async function handleCSV(text: string) {
@@ -393,25 +450,30 @@ function computeReconRange(): { min: number; max: number } {
     if (!engine) return { min: 0, max: 1 };
     const views = engine.bridge.getChunkViews(engine.vGrid.chunks[0].id);
     const recon = views[4];
-    // Scan only cells where recon has meaningful predictions (from observed entries)
     const target = views[3];
     let minVal = Infinity, maxVal = -Infinity;
+    
+    // Scan only cells where recon has meaningful predictions (from observed entries)
     for (let i = 0; i < recon.length; i++) {
-        if (target[i] > 0) { // Only look at observed positions
-            const v = recon[i];
+        const v = recon[i];
+        if (!isFinite(v)) continue;
+        if (target[i] > 0) {
             if (v < minVal) minVal = v;
             if (v > maxVal) maxVal = v;
         }
     }
+    
     if (!isFinite(minVal)) {
-        // Fall back to full recon range if nothing observed yet
+        // Fall back to full recon range if nothing observed yet or data is zero
         for (let i = 0; i < recon.length; i++) {
-            if (recon[i] !== 0) {
-                if (recon[i] < minVal) minVal = recon[i];
-                if (recon[i] > maxVal) maxVal = recon[i];
+            const v = recon[i];
+            if (isFinite(v) && Math.abs(v) > 1e-10) {
+                if (v < minVal) minVal = v;
+                if (v > maxVal) maxVal = v;
             }
         }
     }
+    
     if (!isFinite(minVal)) return { min: 0, max: 1 };
     const range = maxVal - minVal || 1;
     return { min: Math.max(0, minVal - range * 0.05), max: maxVal + range * 0.1 };
@@ -444,7 +506,9 @@ function renderErrorMap(canvas: HTMLCanvasElement, sliceZ: number) {
     const views = engine.bridge.getChunkViews(engine.vGrid.chunks[0].id);
     const target = views[3];
     const recon  = views[4];
-    const { nx, ny } = (engine.vGrid as any).config.dimensions;
+    const dims = engine.vGrid.dimensions; // Authoritative dimensions
+    const nx = dims.nx;
+    const ny = dims.ny;
 
     if (canvas.width !== nx || canvas.height !== ny) {
         canvas.width  = nx;
@@ -455,7 +519,8 @@ function renderErrorMap(canvas: HTMLCanvasElement, sliceZ: number) {
 
     const ctx = canvas.getContext('2d')!;
     const imageData = ctx.createImageData(nx, ny);
-    const pixels = imageData.data; // Direct reference — NOT a copy
+    // Use Uint32Array for pixel manipulation to be consistent with CanvasAdapterNeo
+    const pixels32 = new Uint32Array(imageData.data.buffer);
     const sliceOffset = sliceZ * nx * ny;
 
     // Collect all errors for this slice to compute 95th-percentile scale
@@ -465,28 +530,40 @@ function renderErrorMap(canvas: HTMLCanvasElement, sliceZ: number) {
             const idx = sliceOffset + j * nx + i;
             const tgt = target[idx];
             const rec = recon[idx];
-            const err = tgt > 0 ? Math.abs(tgt - rec) : Math.abs(rec);
+            // Handle potentially non-finite values from ALS instability
+            const valT = isFinite(tgt) ? tgt : 0;
+            const valR = isFinite(rec) ? rec : 0;
+            const err = valT > 0 ? Math.abs(valT - valR) : Math.abs(valR);
             errors.push(err);
         }
     }
     errors.sort((a, b) => a - b);
     const p95idx = Math.floor(errors.length * 0.95);
-    const maxErr = errors[p95idx] > 0 ? errors[p95idx] : 1;
+    // Use a noise floor (0.1) so we don't amplify tiny residuals into bright colors.
+    // This ensures a "near-perfect" fit actually looks black/dark as expected.
+    const p95Val = errors[p95idx];
+    const maxErr = Math.max(0.1, p95Val > 1e-10 ? p95Val : (errors[errors.length - 1] > 1e-10 ? errors[errors.length - 1] : 1.0));
 
     // Draw pixels
     for (let j = 0; j < ny; j++) {
         for (let i = 0; i < nx; i++) {
             const srcIdx  = sliceOffset + j * nx + i;
-            const dstIdx  = (j * nx + i) * 4;
+            const dstIdx  = j * nx + i;
             const tgt = target[srcIdx];
             const rec = recon[srcIdx];
-            const err = tgt > 0 ? Math.abs(tgt - rec) : Math.abs(rec);
+            const valT = isFinite(tgt) ? tgt : 0;
+            const valR = isFinite(rec) ? rec : 0;
+            const err = valT > 0 ? Math.abs(valT - valR) : Math.abs(valR);
+            
             const t   = Math.min(1, err / maxErr);
             const [r, g, b] = samplePalette(t, INFERNO_PALETTE);
-            pixels[dstIdx]     = r;
-            pixels[dstIdx + 1] = g;
-            pixels[dstIdx + 2] = b;
-            pixels[dstIdx + 3] = 255;
+            
+            // RGBA as little-endian 0xAABBGGRR
+            pixels32[dstIdx] = 
+                (255 << 24) |              // Alpha
+                (Math.floor(b) << 16) |    // Blue
+                (Math.floor(g) << 8) |     // Green
+                Math.floor(r);             // Red
         }
     }
     ctx.putImageData(imageData, 0, 0);
