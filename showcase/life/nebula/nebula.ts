@@ -91,21 +91,21 @@ class LifeNebula {
         this.shark.add(body);
         this.scene.add(this.shark);
 
-        const colors = [0xf43f5e, 0x38bdf8, 0xd9f99d, 0x818cf8];
+        const colors = [0xf43f5e, 0x38bdf8, 0x10b981, 0x818cf8];
         for (let i = 0; i < this.preyCount; i++) {
-            const mat = new THREE.MeshStandardMaterial({ color: colors[i%4], emissive: colors[i%4], emissiveIntensity: 1.0 });
+            const mat = new THREE.MeshStandardMaterial({ color: colors[i%4], emissive: colors[i%4], emissiveIntensity: 2.0 });
             const p = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18), mat);
             p.scale.set(1, 0.4, 1.6);
             this.scene.add(p);
             this.preyList.push(p as any);
-            this.preyVels.push(new THREE.Vector3((Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1));
+            this.preyVels.push(new THREE.Vector3((Math.random()-0.5)*0.12, (Math.random()-0.5)*0.08, (Math.random()-0.5)*0.12));
             this.preyStatus.push(0);
         }
 
         this.waterGeo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, NX - 1, NY - 1);
         const wMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0x0ea5e9, transparent: true, opacity: 0.6, transmission: 0.5, side: THREE.DoubleSide,
-            metalness: 0.9, roughness: 0.05, clearcoat: 1.0
+            color: 0x38bdf8, transparent: true, opacity: 0.8, transmission: 0.3, side: THREE.DoubleSide,
+            metalness: 0.9, roughness: 0.05, clearcoat: 1.0, clearcoatRoughness: 0.05
         });
         this.waterMesh = new THREE.Mesh(this.waterGeo, wMat);
         this.waterMesh.position.y = TANK_SIZE * 0.25; 
@@ -119,7 +119,12 @@ class LifeNebula {
             const factory = new HypercubeNeoFactory();
             const manifest = await factory.fromManifest('./nebula-manifest.json');
             this.engine = await factory.build(manifest.config, manifest.engine);
-            this.updateHUD("Core Online. Starting Simulation.");
+            
+            // --- HIDE LOADER & START ---
+            const loader = document.getElementById('loader');
+            if (loader) loader.style.display = 'none';
+            if (this.debugHUD) this.debugHUD.style.display = 'none'; // Cleanup HUD for masterpiece
+            
             this.animate();
         } catch (e: any) {
             console.error("Nebula Engine Init Error:", e);
@@ -181,7 +186,7 @@ class LifeNebula {
                 for (let x=0; x<NX; x++) {
                     const vertIdx = y * NX + x;
                     const v = hData[vertIdx];
-                    pAttr.setZ(vertIdx, isNaN(v) ? 0 : (v - 1.0) * 45.0); 
+                    pAttr.setZ(vertIdx, isNaN(v) ? 0 : (v - 1.0) * 80.0); // Amplified ripples
                 }
             }
             pAttr.needsUpdate = true; this.waterGeo.computeVertexNormals();
