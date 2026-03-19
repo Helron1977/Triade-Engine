@@ -62,7 +62,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let py = id.y + 1u;
     let pNx = nx + 2u;
     let pNy = ny + 2u;
-    let i = py * pNx + px;
+    let nz = params.nz;
+    
+    // Top-Layer Indexing: (z * NY + (NY-1)) * NX + x
+    let gy = select(0u, params.ny - 1u, params.ny > 1u);
+    let i = (id.y * params.ny + gy) * nx + id.x;
+    
+    // Padded indices for neighborhood (2D slice logic)
+    let i_padded = py * pNx + px;
 
     let strideFace = params.strideFace;
     let readParity = params.currentTick % 2u;
@@ -104,17 +111,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     var pf = array<f32, 9>();
-    let isLeft = (px == 1u); let isRight = (px == nx); let isTop = (py == 1u); let isBottom = (py == ny);
+    let isLeft = (id.x == 0u); let isRight = (id.x == nx - 1u); 
+    let isTop = (id.y == 0u); let isBottom = (id.y == ny - 1u); // id.y is z-axis here
+
+    let dzStride = params.ny * params.nx;
 
     pf[0] = data[get_f_idx(0u, readParity, strideFace, params.fBase, i)];
     pf[1] = data[get_f_idx(1u, readParity, strideFace, params.fBase, i - 1u)];
-    pf[2] = data[get_f_idx(2u, readParity, strideFace, params.fBase, i - pNx)];
+    pf[2] = data[get_f_idx(2u, readParity, strideFace, params.fBase, i - dzStride)];
     pf[3] = data[get_f_idx(3u, readParity, strideFace, params.fBase, i + 1u)];
-    pf[4] = data[get_f_idx(4u, readParity, strideFace, params.fBase, i + pNx)];
-    pf[5] = data[get_f_idx(5u, readParity, strideFace, params.fBase, i - pNx - 1u)];
-    pf[6] = data[get_f_idx(6u, readParity, strideFace, params.fBase, i - pNx + 1u)];
-    pf[7] = data[get_f_idx(7u, readParity, strideFace, params.fBase, i + pNx + 1u)];
-    pf[8] = data[get_f_idx(8u, readParity, strideFace, params.fBase, i + pNx - 1u)];
+    pf[4] = data[get_f_idx(4u, readParity, strideFace, params.fBase, i + dzStride)];
+    pf[5] = data[get_f_idx(5u, readParity, strideFace, params.fBase, i - dzStride - 1u)];
+    pf[6] = data[get_f_idx(6u, readParity, strideFace, params.fBase, i - dzStride + 1u)];
+    pf[7] = data[get_f_idx(7u, readParity, strideFace, params.fBase, i + dzStride + 1u)];
+    pf[8] = data[get_f_idx(8u, readParity, strideFace, params.fBase, i + dzStride - 1u)];
 
     if (isLeft) { pf[1] = data[get_f_idx(3u, readParity, strideFace, params.fBase, i)]; pf[5] = data[get_f_idx(7u, readParity, strideFace, params.fBase, i)]; pf[8] = data[get_f_idx(6u, readParity, strideFace, params.fBase, i)]; }
     if (isRight) { pf[3] = data[get_f_idx(1u, readParity, strideFace, params.fBase, i)]; pf[6] = data[get_f_idx(8u, readParity, strideFace, params.fBase, i)]; pf[7] = data[get_f_idx(5u, readParity, strideFace, params.fBase, i)]; }

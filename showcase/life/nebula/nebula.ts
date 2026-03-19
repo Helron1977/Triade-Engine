@@ -77,6 +77,13 @@ class LifeNebula {
         const p1 = new THREE.PointLight(0xf43f5e, 500, 50); p1.position.set(12, 10, 12); this.scene.add(p1);
         const p2 = new THREE.PointLight(0x0ea5e9, 500, 50); p2.position.set(-12, 5, -12); this.scene.add(p2);
 
+        const sun = new THREE.DirectionalLight(0xffffff, 3.5);
+        sun.position.set(10, 25, 15);
+        this.scene.add(sun);
+
+        const amb = new THREE.AmbientLight(0x0ea5e9, 0.5);
+        this.scene.add(amb);
+
         const tankMat = new THREE.MeshPhysicalMaterial({ color: 0x38bdf8, transmission: 0.95, thickness: 1, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
         this.scene.add(new THREE.Mesh(new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE * 0.5, TANK_SIZE), tankMat));
 
@@ -350,13 +357,17 @@ class LifeNebula {
         steer(this.shark.position, this.sharkVel, true);
         this.preyList.forEach((p, i) => steer(p.position, this.preyVels[i], false));
 
-        // 6. Water Mesh Sync (Top Layer)
-        console.debug("Nebula: Syncing Water Mesh...");
+        // 6. Water Mesh Sync (Top Layer 3D alignment)
         const hData = bridge.getFaceData(chunk.id, 'water_h');
         const pAttr = this.waterGeo.attributes.position;
-        for (let i=0; i<pAttr.count; i++) {
-            const val = hData[(NY-1)*NX*NZ + i]; 
-            pAttr.setY(i, isNaN(val) ? 0 : (val - 1.0) * 35.0); // Extreme amplification (Base rho is 1.0)
+        const gy = NY - 1; 
+        for (let j=0; j<NZ; j++) {
+            for (let i=0; i<NX; i++) {
+                const vertIdx = j * NX + i;
+                const physIdx = (j * NY + gy) * NX + i; // Match (z * NY + y) * NX + x
+                const val = hData[physIdx];
+                pAttr.setY(vertIdx, isNaN(val) ? 0 : (val - 1.0) * 45.0); 
+            }
         }
         pAttr.needsUpdate = true; this.waterGeo.computeVertexNormals();
 
