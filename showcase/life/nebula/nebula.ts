@@ -104,7 +104,17 @@ class LifeNebula {
         }
 
         this.waterGeo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, NX - 1, NZ - 1);
-        const wMat = new THREE.MeshPhysicalMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.6, transmission: 0.5, side: THREE.DoubleSide });
+        const wMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0x0ea5e9, 
+            transparent: true, 
+            opacity: 0.7, 
+            transmission: 0.3, 
+            side: THREE.DoubleSide,
+            metalness: 0.7,
+            roughness: 0.1,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.1
+        });
         this.waterMesh = new THREE.Mesh(this.waterGeo, wMat);
         this.waterMesh.rotation.x = -Math.PI / 2; this.waterMesh.position.y = TANK_SIZE * 0.25;
         this.scene.add(this.waterMesh);
@@ -233,14 +243,14 @@ class LifeNebula {
         else if (this.sharkState === SharkState.AMBUSH) target = this.ambushTarget;
         else if (this.sharkState === SharkState.WANDER) target = new THREE.Vector3((Math.random()-0.5)*TANK_SIZE, (Math.random()-0.6)*TANK_SIZE*0.3, (Math.random()-0.5)*TANK_SIZE);
         
-        // Shark Wake: Inject into Ocean if near surface (vh = TANK_SIZE * 0.24)
+        // Shark Wake: Inject into Ocean if near surface
         const vh = TANK_SIZE * 0.24;
         const distFromSurface = Math.abs(this.shark.position.y - vh);
-        if (distFromSurface < 2.0 && this.engine) {
+        if (distFromSurface < 2.5 && this.engine) {
             const g = this.worldToGrid(this.shark.position);
             (this.engine.dispatcher as any).setRuleParams('neo-ocean-v1', {
                 objects: [
-                    { pos: { x: g.x, y: g.z }, dim: { x: 4, y: 4 }, isObstacle: 0, biology: 0, objType: 1, rho: 1.5 },
+                    { pos: { x: g.x, y: g.z }, dim: { x: 6, y: 6 }, isObstacle: 0, biology: 0, objType: 1, rho: 5.0 }, // Stronger Injection
                     ...new Array(7).fill({ pos: { x: -1000, y: -1000 }, dim: { x: 1, y: 1 }, isObstacle: 0, biology: 0, objType: 0, rho: 0 })
                 ]
             });
@@ -346,7 +356,7 @@ class LifeNebula {
         const pAttr = this.waterGeo.attributes.position;
         for (let i=0; i<pAttr.count; i++) {
             const val = hData[(NY-1)*NX*NZ + i]; 
-            pAttr.setY(i, isNaN(val) ? 0 : val * 1.5);
+            pAttr.setY(i, isNaN(val) ? 0 : (val - 1.0) * 35.0); // Extreme amplification (Base rho is 1.0)
         }
         pAttr.needsUpdate = true; this.waterGeo.computeVertexNormals();
 
