@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { HypercubeNeoFactory } from '../../../core/HypercubeNeoFactory';
 
-// --- Constants & Config (Native 2.5D: XY=Surface, Z=Depth) ---
+/**
+ * LIFE NEBULA V9.9 - Masterpiece Edition
+ * Ground-Truth 2.5D Architecture (XY=Surface, Z=Depth)
+ */
 const NX = 64; const NY = 64; const NZ = 32;
 const TANK_SIZE = 20;
 
@@ -10,8 +13,7 @@ enum SharkState {
     PATROL = "SEARCHING VOLUME",
     HUNT = "VOLUMETRIC CHASE",
     AMBUSH = "DEEP BRAIN AMBUSH",
-    WANDER = "EXPLORING NEBULA",
-    RECOVERY = "RECOVERING"
+    WANDER = "EXPLORING NEBULA"
 }
 
 class LifeNebula {
@@ -30,12 +32,10 @@ class LifeNebula {
     private sharkVel = new THREE.Vector3(0, 0, 0);
     private sharkState: SharkState = SharkState.PATROL;
     private stateTimer = 0;
-    private targetIndex = -1;
     private ambushTarget = new THREE.Vector3(0, 0, 0);
 
     private waterMesh!: THREE.Mesh;
     private waterGeo!: THREE.PlaneGeometry;
-    private heatmapCtx!: CanvasRenderingContext2D;
     private lastTime = 0;
 
     constructor() {
@@ -59,15 +59,9 @@ class LifeNebula {
         this.controls.enableDamping = true;
 
         this.scene.add(new THREE.HemisphereLight(0x38bdf8, 0x020617, 2));
-        const sun = new THREE.DirectionalLight(0xffffff, 3.5);
+        const sun = new THREE.DirectionalLight(0xffffff, 4.0);
         sun.position.set(10, 25, 15);
         this.scene.add(sun);
-
-        const canvas = document.createElement('canvas');
-        canvas.width = NX; canvas.height = NY;
-        canvas.style.cssText = 'position: absolute; bottom: 20px; right: 20px; width: 140px; height: 140px; border: 2px solid #38bdf8; border-radius: 4px; opacity: 0.9;';
-        container.appendChild(canvas);
-        this.heatmapCtx = canvas.getContext('2d')!;
 
         this.setupModels();
     }
@@ -93,8 +87,8 @@ class LifeNebula {
 
         this.waterGeo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, NX - 1, NY - 1);
         const wMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0x0ea5e9, transparent: true, opacity: 0.7, transmission: 0.3, side: THREE.DoubleSide,
-            metalness: 0.7, roughness: 0.1, clearcoat: 1.0, clearcoatRoughness: 0.1
+            color: 0x0ea5e9, transparent: true, opacity: 0.75, transmission: 0.4, side: THREE.DoubleSide,
+            metalness: 0.8, roughness: 0.1, clearcoat: 1.0, clearcoatRoughness: 0.1
         });
         this.waterMesh = new THREE.Mesh(this.waterGeo, wMat);
         this.waterMesh.position.y = TANK_SIZE * 0.25; 
@@ -128,12 +122,12 @@ class LifeNebula {
 
     private updateAI = async () => {
         if (!this.engine) return;
-        const bridge = (this.engine as any).bridge;
+        const bridge = this.engine.bridge;
         const chunk = this.engine.vGrid.chunks[0];
         const nX = NX, nY = NY, nZ = NZ;
-        const getIdx = (x: number, y: number, z: number) => (z * nY + y) * nX + x;
+        const getIdx = (gx: number, gy: number, gz: number) => (gz * nY + gy) * nX + gx;
 
-        // Shark Wake (Object Injection)
+        // --- Surface Interaction (Objects Injection) ---
         if (Math.abs(this.shark.position.y - TANK_SIZE * 0.24) < 2.5) {
             const g = this.worldToGrid(this.shark.position);
             const config = (this.engine as any).vGrid.config;
@@ -145,33 +139,36 @@ class LifeNebula {
             });
         }
         
-        // --- Step & Sync ---
         await this.engine.step(1);
         await bridge.syncToHost();
         
-        // Cleanup wake
         const config = (this.engine as any).vGrid.config;
         if (config.objects) config.objects = config.objects.filter((o: any) => o.id !== 'shark_wake');
 
-        // --- Water Mesh Sync ---
-        const hData = bridge.getFaceData(chunk.id, 'water_h');
+        // --- Data Retrieval (Native Pattern) ---
+        const views = bridge.getChunkViews(chunk.id);
+        const waterIdx = this.engine.parityManager.getFaceIndices('water_h').read;
+        const hData = views[waterIdx];
+        
+        // Update Water Mesh
         const pAttr = this.waterGeo.attributes.position;
         for (let y=0; y<NY; y++) {
             for (let x=0; x<NX; x++) {
                 const vertIdx = y * NX + x;
-                const val = hData[vertIdx];
-                pAttr.setZ(vertIdx, isNaN(val) ? 0 : (val - 1.0) * 45.0); 
+                const v = hData[vertIdx];
+                pAttr.setZ(vertIdx, isNaN(v) ? 0 : (v - 1.0) * 45.0); 
             }
         }
         pAttr.needsUpdate = true; this.waterGeo.computeVertexNormals();
 
-        // --- Simple Steer ---
-        const px = bridge.getFaceData(chunk.id, 'sdf_predator_x');
+        // --- Simple AI (Predator Drift) ---
+        const predIdx = this.engine.parityManager.getFaceIndices('sdf_predator_x').read;
+        const px = views[predIdx];
         const steer = (pos: THREE.Vector3, vel: THREE.Vector3, isShark: boolean) => {
             const g = this.worldToGrid(pos);
             const idx = getIdx(g.x, g.y, g.z);
             const tx = px[idx];
-            if (tx !== -10000) {
+            if (tx !== -10000 && tx !== undefined) {
                 const targetPos = this.gridToWorld(tx, g.y, g.z);
                 const desired = targetPos.sub(pos).normalize().multiplyScalar(isShark ? 0.15 : 0.08);
                 vel.lerp(desired, 0.1);
