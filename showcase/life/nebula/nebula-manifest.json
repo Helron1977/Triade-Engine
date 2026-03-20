@@ -32,7 +32,7 @@
                 "method": "BGK",
                 "source": "f0",
                 "params": {
-                    "omega": 1.7,
+                    "omega": 1.1,
                     "bioDiffusion": 0.005,
                     "bioGrowth": 0.01
                 }

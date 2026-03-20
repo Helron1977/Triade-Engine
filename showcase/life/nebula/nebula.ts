@@ -3,19 +3,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { HypercubeNeoFactory } from '../../../core/HypercubeNeoFactory';
 
 /**
- * LIFE NEBULA V17.0 - THE SOUL RESTORED
- * Fix: Ghost-Cell Stride (66x66 -> 64x64)
- * Fix: Prey Flocking (Boids) & Shark Persistence
+ * LIFE NEBULA V23.0 - THE LIQUID SOUL
+ * Feature: Velocity-based Rings (Outward thrust)
+ * Feature: No Spikes (Stable rho)
+ * Feature: Erupting Splash (8-point star)
  */
-const NX = 64; const NY = 64; const NZ = 1;
+const NX = 64; const NY = 64;
 const TANK_SIZE = 20;
-const SURFACE_Y = 5;
-
-enum SharkState {
-    PATROL = "SEARCHING VOLUME",
-    HUNT = "VOLUMETRIC CHASE",
-    AMBUSH = "DEEP BRAIN AMBUSH",
-}
+const SURFACE_Y = 8;
 
 class LifeNebula {
     private scene!: THREE.Scene;
@@ -30,10 +25,12 @@ class LifeNebula {
     private preyVels: THREE.Vector3[] = [];
 
     private sharkVel = new THREE.Vector3(0, 0, 0);
-    private sharkState: SharkState = SharkState.PATROL;
+    private currentTargetIndex = -1;
+    private splashCooldown = 0;
+    
     private waterMesh!: THREE.Mesh;
     private waterGeo!: THREE.PlaneGeometry;
-    private heatmapCtx!: CanvasRenderingContext2D;
+    private underwaterMesh!: THREE.Mesh;
 
     constructor() {
         this.init3D().then(() => this.initEngine()).catch(console.error);
@@ -42,9 +39,9 @@ class LifeNebula {
     private async init3D() {
         const container = document.getElementById('canvas-container')!;
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x020617);
+        this.scene.background = new THREE.Color(0x010409);
         this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(18, 14, 18);
+        this.camera.position.set(22, 14, 22);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -54,51 +51,49 @@ class LifeNebula {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
 
-        this.scene.add(new THREE.HemisphereLight(0x38bdf8, 0x020617, 2));
-        const sun = new THREE.DirectionalLight(0xffffff, 3.5);
-        sun.position.set(10, 25, 10);
+        this.scene.add(new THREE.HemisphereLight(0x38bdf8, 0x020617, 3));
+        const sun = new THREE.DirectionalLight(0xffffff, 5.0);
+        sun.position.set(10, 30, 20);
         this.scene.add(sun);
-
-        const canvas = document.createElement('canvas');
-        canvas.width = NX; canvas.height = NY;
-        canvas.style.cssText = 'position: absolute; bottom: 20px; right: 20px; width: 140px; height: 140px; border: 2px solid #38bdf8; border-radius: 4px; opacity: 0.8;';
-        container.appendChild(canvas);
-        this.heatmapCtx = canvas.getContext('2d')!;
 
         this.setupModels();
     }
 
     private setupModels() {
         this.shark = new THREE.Group();
-        const sMat = new THREE.MeshPhysicalMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.1, clearcoat: 1 });
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.2, 4, 16), sMat);
-        body.rotation.x = Math.PI / 2; body.scale.set(1, 1, 0.8);
+        const sMat = new THREE.MeshPhysicalMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.1, clearcoat: 1.0 });
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.4, 4, 16), sMat);
+        body.rotation.x = Math.PI / 2;
         this.shark.add(body);
         this.shark.position.set(0, SURFACE_Y, 0);
         this.scene.add(this.shark);
 
-        const colors = [0xf43f5e, 0x38bdf8, 0x10b981, 0x818cf8];
+        const colors = [0xf43f5e, 0x38bdf8, 0x10b981];
         for (let i = 0; i < this.preyCount; i++) {
-            const mat = new THREE.MeshStandardMaterial({ 
-                color: colors[i%4], emissive: colors[i%4], emissiveIntensity: 2.5 
-            });
+            const mat = new THREE.MeshStandardMaterial({ color: colors[i%3], emissive: colors[i%3], emissiveIntensity: 2.0 });
             const p = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18), mat);
             p.scale.set(1, 0.5, 1.8);
-            p.position.set((Math.random()-0.5)*18, SURFACE_Y + (Math.random()-0.5)*1, (Math.random()-0.5)*18);
+            p.position.set((Math.random()-0.5)*18, Math.random() * SURFACE_Y, (Math.random()-0.5)*18);
             this.scene.add(p);
             this.preyList.push(p as any);
             this.preyVels.push(new THREE.Vector3((Math.random()-0.5)*0.1, 0, (Math.random()-0.5)*0.1));
         }
 
         this.waterGeo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, NX - 1, NY - 1);
+        const colorAttr = new THREE.BufferAttribute(new Float32Array(NX * NY * 3), 3);
+        this.waterGeo.setAttribute('color', colorAttr);
         const wMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0x38bdf8, transparent: true, opacity: 0.65, transmission: 0.5, side: THREE.DoubleSide,
-            metalness: 0.9, roughness: 0.05, clearcoat: 1.0, clearcoatRoughness: 0.05
+            color: 0x0ea5e9, transparent: true, opacity: 0.65, transmission: 0.5, side: THREE.DoubleSide,
+            metalness: 0.9, roughness: 0.05, clearcoat: 1.0, vertexColors: true
         });
         this.waterMesh = new THREE.Mesh(this.waterGeo, wMat);
-        this.waterMesh.position.y = SURFACE_Y; 
-        this.waterMesh.rotation.x = -Math.PI / 2;
+        this.waterMesh.position.y = SURFACE_Y; this.waterMesh.rotation.x = -Math.PI / 2;
         this.scene.add(this.waterMesh);
+
+        const uwMat = new THREE.MeshStandardMaterial({ color: 0x075985, transparent: true, opacity: 0.4 });
+        this.underwaterMesh = new THREE.Mesh(new THREE.BoxGeometry(TANK_SIZE, SURFACE_Y, TANK_SIZE), uwMat);
+        this.underwaterMesh.position.y = SURFACE_Y / 2;
+        this.scene.add(this.underwaterMesh);
     }
 
     private async initEngine() {
@@ -111,13 +106,9 @@ class LifeNebula {
 
     private worldToGrid(v: THREE.Vector3) {
         return {
-            x: Math.floor(Math.max(0, Math.min(63, (v.x / TANK_SIZE + 0.5) * 64))),
-            y: Math.floor(Math.max(0, Math.min(63, (v.z / TANK_SIZE + 0.5) * 64)))
+            gx: (v.x / TANK_SIZE + 0.5) * 64,
+            gy: (v.z / TANK_SIZE + 0.5) * 64
         };
-    }
-
-    private gridToWorld(gx: number, gy: number) {
-        return new THREE.Vector3(((gx / 64) - 0.5) * TANK_SIZE, SURFACE_Y, ((gy / 64) - 0.5) * TANK_SIZE);
     }
 
     private isUpdating = false;
@@ -127,84 +118,77 @@ class LifeNebula {
         try {
             const bridge = this.engine.bridge;
             const chunk = this.engine.vGrid.chunks[0];
-            const gShark = this.worldToGrid(this.shark.position);
+            const pos = this.worldToGrid(this.shark.position);
 
             const config = (this.engine as any).vGrid.config;
             if (!config.objects) config.objects = [];
-            config.objects.push({
-                id: 'shark_wake', type: 'circle',
-                position: { x: gShark.x - 3, y: gShark.y - 3 }, dimensions: { w: 7, h: 7 },
-                properties: { rho: 6.0, biology: 1.0 }, rasterMode: "replace"
-            });
+            
+            // --- VELOCITY RINGS: Erupting from the body ---
+            const distToSurface = Math.abs(this.shark.position.y - SURFACE_Y);
+            this.splashCooldown--;
+            if (distToSurface < 1.0 && this.splashCooldown <= 0) {
+                // 8-Point Eruption Star
+                const thrust = 0.4;
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    config.objects.push({
+                        id: `ring_${i}`, type: 'circle',
+                        position: { x: pos.gx + Math.cos(angle)*3 - 1, y: pos.gy + Math.sin(angle)*3 - 1 },
+                        dimensions: { w: 2, h: 2 },
+                        properties: { vx: Math.cos(angle)*thrust, vy: Math.sin(angle)*thrust, rho: 1.1 },
+                        rasterMode: "replace"
+                    });
+                }
+                this.splashCooldown = 12;
+            }
 
             await this.engine.step(1);
             await bridge.syncToHost();
-            
-            config.objects = config.objects.filter((o: any) => o.id !== 'shark_wake');
+            config.objects = config.objects.filter((o: any) => !o.id.startsWith('ring_'));
 
             const views = bridge.getChunkViews(chunk.id);
             const rIdx = this.engine.parityManager.getFaceIndices('rho').read;
-            const pIdx = this.engine.parityManager.getFaceIndices('sdf_predator_x').read;
-            const hIdx = this.engine.parityManager.getFaceIndices('strategy_heatmap').read;
-            
             const rData = views[rIdx];
-            const pxData = views[pIdx];
-            const heatData = views[hIdx];
 
-            // --- STRIDE FIX (66x66 -> 64x64) ---
             const pAttr = this.waterGeo.attributes.position;
-            const stride = NX + 2; // Padded width
+            const cAttr = this.waterGeo.attributes.color;
+            const stride = NX + 2;
             for (let y = 0; y < NY; y++) {
                 for (let x = 0; x < NX; x++) {
-                    const vertIdx = y * NX + x;
-                    const vramIdx = (y + 1) * stride + (x + 1); // Skip 1-pixel ghost border
-                    const v = rData[vramIdx];
-                    pAttr.setZ(vertIdx, isNaN(v) ? 0 : (v - 1.0) * 80.0);
+                    const vIdx = y * NX + x;
+                    const v = rData[(y + 1) * stride + (x + 1)];
+                    const win = Math.min(1.0, Math.min(x, y, NX-1-x, NY-1-y) / 4.0);
+                    
+                    const height = isNaN(v) ? 0 : (v - 1.0) * 180.0 * win; 
+                    pAttr.setZ(vIdx, height);
+
+                    // Physical White Crests
+                    if (height > 0.4) {
+                        cAttr.setXYZ(vIdx, 1.0, 1.0, 1.0);
+                    } else if (height < -0.4) {
+                        cAttr.setXYZ(vIdx, 0.0, 0.1, 0.3);
+                    } else {
+                        cAttr.setXYZ(vIdx, 0.05, 0.5, 0.82);
+                    }
                 }
             }
-            pAttr.needsUpdate = true; this.waterGeo.computeVertexNormals();
+            pAttr.needsUpdate = true; cAttr.needsUpdate = true; this.waterGeo.computeVertexNormals();
 
-            // --- SHARK INTELLIGENCE ---
-            const tx = pxData[(gShark.y + 1) * stride + (gShark.x + 1)]; // Corrected index for SDF read
-            if (tx !== -10000 && tx !== undefined) {
-                const targetPos = this.gridToWorld(tx, gShark.y);
-                const desired = targetPos.sub(this.shark.position).normalize();
-                
-                if (this.sharkState === SharkState.PATROL) {
-                    this.sharkVel.lerp(desired.multiplyScalar(0.12), 0.05);
-                    if (Math.random() < 0.01) this.sharkState = SharkState.AMBUSH;
-                } else if (this.sharkState === SharkState.AMBUSH) {
-                    this.sharkVel.multiplyScalar(0.85);
-                    if (Math.random() < 0.05) this.sharkState = SharkState.HUNT;
-                } else if (this.sharkState === SharkState.HUNT) {
-                    this.sharkVel.lerp(desired.multiplyScalar(0.3), 0.15); // Faster strike
-                    if (Math.random() < 0.04) this.sharkState = SharkState.PATROL;
-                }
+            // AI Focus
+            if (this.currentTargetIndex === -1 || Math.random() < 0.005) {
+                let mD = 1000;
+                this.preyList.forEach((p, idx) => {
+                    const d = p.position.distanceTo(this.shark.position);
+                    if (d < mD) { mD = d; this.currentTargetIndex = idx; }
+                });
+            }
+            if (this.currentTargetIndex !== -1) {
+                const target = this.preyList[this.currentTargetIndex];
+                const delta = target.position.clone().sub(this.shark.position).normalize();
+                this.sharkVel.lerp(delta.multiplyScalar(0.25), 0.06);
             }
 
-            // --- CAPTURE & HEATMAP ---
-            this.preyList.forEach((p, i) => {
-                const dist = p.position.distanceTo(this.shark.position);
-                if (dist < 1.4) {
-                    const g = this.worldToGrid(p.position);
-                    heatData[(g.y + 1) * stride + (g.x + 1)] += 20.0; 
-                    p.position.set((Math.random()-0.5)*18, SURFACE_Y, (Math.random()-0.5)*18);
-                    console.warn(`Success: Catch @ grid ${g.x}, ${g.y}`);
-                }
-            });
-
-            // Viz Heatmap (Interior only)
-            const imgData = this.heatmapCtx.createImageData(NX, NY);
-            for(let y=0; y<NY; y++) {
-                for(let x=0; x<NX; x++) {
-                    const idx = (y * NX + x) * 4;
-                    const h = heatData[(y + 1) * stride + (x + 1)];
-                    imgData.data[idx+0] = 0; imgData.data[idx+1] = Math.min(255, h*25); imgData.data[idx+2] = 255; imgData.data[idx+3] = 255;
-                }
-            }
-            this.heatmapCtx.putImageData(imgData, 0, 0);
-
-        } catch (e) { console.error("Nebula Stride Error:", e); }
+        } catch (e) { console.error("Nebula Soul Error:", e); }
         finally { this.isUpdating = false; }
     }
 
@@ -212,56 +196,27 @@ class LifeNebula {
         await this.updateAI();
         const b = 9.8; 
         
-        // Wall Avoidance
-        const distX = b - Math.abs(this.shark.position.x);
-        const distZ = b - Math.abs(this.shark.position.z);
-        if (distX < 3 || distZ < 3) {
-            const push = new THREE.Vector3(-this.shark.position.x, 0, -this.shark.position.z).normalize().multiplyScalar(0.12);
-            this.sharkVel.lerp(push, 0.1);
-        }
-
         this.shark.position.add(this.sharkVel);
         if (this.sharkVel.lengthSq() > 0.001) this.shark.lookAt(this.shark.position.clone().add(this.sharkVel));
-        this.shark.position.clamp(new THREE.Vector3(-b, SURFACE_Y - 2, -b), new THREE.Vector3(b, SURFACE_Y + 2, b));
+        this.shark.position.clamp(new THREE.Vector3(-b, 0, -b), new THREE.Vector3(b, SURFACE_Y + 1, b));
 
-        // --- PREY FLOCKING (BOIDS LIGHT) ---
         this.preyList.forEach((p, i) => {
-            let cohesion = new THREE.Vector3();
-            let separation = new THREE.Vector3();
-            let count = 0;
-
-            for (let j = 0; j < 15; j++) { // Check neighbors
-                const other = this.preyList[(i + j + 1) % this.preyCount];
-                const dist = p.position.distanceTo(other.position);
-                if (dist < 3) {
-                    cohesion.add(other.position);
-                    separation.add(p.position.clone().sub(other.position).divideScalar(dist + 0.1));
-                    count++;
-                }
+            const v = this.preyVels[i];
+            v.add(new THREE.Vector3((Math.random()-0.5)*0.012, (Math.random()-0.5)*0.008, (Math.random()-0.5)*0.012));
+            
+            const px = Math.abs(p.position.x);
+            const pz = Math.abs(p.position.z);
+            if (px > 5.0 || pz > 5.0) {
+                v.add(new THREE.Vector3(-p.position.x, 0, -p.position.z).normalize().multiplyScalar(0.2));
             }
 
-            if (count > 0) {
-                cohesion.divideScalar(count).sub(p.position).multiplyScalar(0.02);
-                separation.multiplyScalar(0.05);
-                this.preyVels[i].add(cohesion).add(separation);
-            }
+            const dS = p.position.distanceTo(this.shark.position);
+            if (dS < 4.5) v.lerp(p.position.clone().sub(this.shark.position).normalize().multiplyScalar(0.3), 0.2);
 
-            // Wall Bounce
-            if (b - Math.abs(p.position.x) < 2 || b - Math.abs(p.position.z) < 2) {
-                this.preyVels[i].add(new THREE.Vector3(-p.position.x, 0, -p.position.z).normalize().multiplyScalar(0.04));
-            }
-
-            // Hunter Evasion
-            const distToShark = p.position.distanceTo(this.shark.position);
-            if (distToShark < 4.5) {
-                const evade = p.position.clone().sub(this.shark.position).normalize().multiplyScalar(0.2);
-                this.preyVels[i].lerp(evade, 0.3);
-            }
-
-            this.preyVels[i].clampLength(0.02, 0.15);
-            p.position.add(this.preyVels[i]);
-            if (this.preyVels[i].lengthSq() > 0.001) p.lookAt(p.position.clone().add(this.preyVels[i]));
-            p.position.clamp(new THREE.Vector3(-b, SURFACE_Y - 1, -b), new THREE.Vector3(b, SURFACE_Y + 1, b));
+            v.clampLength(0.04, 0.22);
+            p.position.add(v);
+            if (v.lengthSq() > 0.001) p.lookAt(p.position.clone().add(v));
+            p.position.clamp(new THREE.Vector3(-9.2, 0.5, -9.2), new THREE.Vector3(9.2, SURFACE_Y + 0.5, 9.2));
         });
 
         this.renderer.render(this.scene, this.camera);
