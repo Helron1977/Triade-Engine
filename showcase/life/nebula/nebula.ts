@@ -3,10 +3,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { HypercubeNeoFactory } from '../../../core/HypercubeNeoFactory';
 
 /**
- * LIFE NEBULA V33.0 - THE BI-MATERIAL AQUARIUM
- * Goal: Textured Top Surface, Clear Non-Mirror Sides. Slightly bluish volume.
+ * LIFE NEBULA V41.0 - THE CLAMPED WHITE-CAP MASTERPIECE
+ * Goal: 3D Deforming Surface. Max 5px (0.5 units) Height. White Peak Colors.
  */
+const NX = 64; const NY = 64;
 const TANK_SIZE = 20;
+const SURFACE_Y = 10;
+const H_LIMIT = 0.5; // "5 pixels" relative limit
 
 class LifeNebula {
     private scene!: THREE.Scene;
@@ -22,8 +25,10 @@ class LifeNebula {
 
     private sharkVel = new THREE.Vector3(0, 0, 0);
     private currentTargetIndex = -1;
+    private splashCooldown = 0;
     
-    private waterBox!: THREE.Mesh;
+    private surfaceMesh!: THREE.Mesh;
+    private surfaceGeo!: THREE.PlaneGeometry;
 
     constructor() {
         this.init3D().then(() => this.initEngine()).catch(console.error);
@@ -34,7 +39,7 @@ class LifeNebula {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x011422);
         this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(24, 18, 24);
+        this.camera.position.set(24, 22, 24);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -44,32 +49,47 @@ class LifeNebula {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
 
-        this.scene.add(new THREE.HemisphereLight(0x38bdf8, 0x011422, 3));
+        this.scene.add(new THREE.HemisphereLight(0x38bdf8, 0x011422, 2.5));
         const sun = new THREE.DirectionalLight(0xffffff, 8.0);
         sun.position.set(10, 40, 20);
         this.scene.add(sun);
         
-        const rim = new THREE.PointLight(0x38bdf8, 100, 50);
-        rim.position.set(-20, 10, -20);
-        this.scene.add(rim);
-
         this.setupModels();
     }
 
     private setupModels() {
-        // Enclosure Lines
-        const frameGeo = new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE);
-        const edges = new THREE.EdgesGeometry(frameGeo);
-        const frame = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.25 }));
-        this.scene.add(frame);
+        // Enclosure Frame
+        const frame = new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE);
+        const edges = new THREE.EdgesGeometry(frame);
+        this.scene.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.3 })));
+
+        // Deep Water Block
+        const dGeo = new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE);
+        const dMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0x0ea5e9, transparent: true, opacity: 0.35, transmission: 0.95,
+            metalness: 0, roughness: 0.05, ior: 1.1, thickness: 2.0
+        });
+        this.scene.add(new THREE.Mesh(dGeo, dMat));
+
+        // Clamped Reactive Surface
+        this.surfaceGeo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, NX - 1, NY - 1);
+        const colorAttr = new THREE.BufferAttribute(new Float32Array(this.surfaceGeo.attributes.position.count * 3), 3);
+        this.surfaceGeo.setAttribute('color', colorAttr);
+        const sMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0x0ea5e9, transparent: true, opacity: 0.8, transmission: 0.7,
+            metalness: 0.1, roughness: 0.02, clearcoat: 1.0, 
+            vertexColors: true, ior: 1.33, side: THREE.DoubleSide
+        });
+        this.surfaceMesh = new THREE.Mesh(this.surfaceGeo, sMat);
+        this.surfaceMesh.rotation.x = -Math.PI / 2;
+        this.surfaceMesh.position.y = SURFACE_Y + 0.1;
+        this.scene.add(this.surfaceMesh);
 
         // Shark
         this.shark = new THREE.Group();
-        const sMat = new THREE.MeshPhysicalMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.1, clearcoat: 1.0 });
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.4, 4, 16), sMat);
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.4, 4, 16), new THREE.MeshPhysicalMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.1, clearcoat: 1.0 }));
         body.rotation.x = Math.PI / 2;
-        this.shark.add(body);
-        this.scene.add(this.shark);
+        this.shark.add(body); this.scene.add(this.shark);
 
         // Prey
         const colors = [0xf43f5e, 0x38bdf8, 0x10b981];
@@ -82,29 +102,6 @@ class LifeNebula {
             this.preyList.push(p as any);
             this.preyVels.push(new THREE.Vector3((Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1));
         }
-
-        // --- THE BI-MATERIAL WATER CUBE ---
-        const waterGeo = new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE);
-        
-        // 1. Clear Side Material (Non-Mirror)
-        const sideMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0x0ea5e9, transparent: true, opacity: 0.35, transmission: 0.95,
-            metalness: 0.0, roughness: 0.05, ior: 1.1, thickness: 1.0, 
-            side: THREE.FrontSide 
-        });
-
-        // 2. Pretty Top Surface Material
-        const topMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0x0ea5e9, transparent: true, opacity: 0.7, transmission: 0.8,
-            metalness: 0.1, roughness: 0.02, clearcoat: 1.0, clearcoatRoughness: 0.05,
-            emissive: 0x0284c7, emissiveIntensity: 0.6,
-            side: THREE.DoubleSide
-        });
-
-        // Box Material Indices: 0: +X, 1: -X, 2: +Y (TOP), 3: -Y, 4: +Z, 5: -Z
-        const mats = [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
-        this.waterBox = new THREE.Mesh(waterGeo, mats);
-        this.scene.add(this.waterBox);
     }
 
     private async initEngine() {
@@ -115,10 +112,71 @@ class LifeNebula {
         this.animate();
     }
 
+    private worldToGrid(v: THREE.Vector3) {
+        return {
+            gx: (v.x / TANK_SIZE + 0.5) * 64,
+            gy: (v.z / TANK_SIZE + 0.5) * 64
+        };
+    }
+
+    private isUpdating = false;
     private updateAI = async () => {
-        if (!this.engine) return;
+        if (!this.engine || this.isUpdating) return;
+        this.isUpdating = true;
         try {
-            await this.engine.step(1); 
+            const bridge = this.engine.bridge;
+            const chunk = this.engine.vGrid.chunks[0];
+            const pos = this.worldToGrid(this.shark.position);
+            const config = (this.engine as any).vGrid.config;
+            if (!config.objects) config.objects = [];
+            
+            // Interaction
+            const dist = Math.abs(this.shark.position.y - SURFACE_Y);
+            if (dist < 1.0 && this.splashCooldown-- <= 0) {
+                config.objects.push({
+                    id: 'impact', type: 'circle',
+                    position: { x: pos.gx - 6, y: pos.gy - 6 }, dimensions: { w: 12, h: 12 },
+                    properties: { rho: 1.45 }, rasterMode: "replace" 
+                });
+                this.splashCooldown = 15;
+            }
+
+            await this.engine.step(1);
+            await bridge.syncToHost();
+            config.objects = config.objects.filter((o: any) => o.id !== 'impact');
+
+            const views = bridge.getChunkViews(chunk.id);
+            const rIdx = this.engine.parityManager.getFaceIndices('rho').read;
+            const rData = views[rIdx];
+
+            const pAttr = this.surfaceGeo.attributes.position;
+            const cAttr = this.surfaceGeo.attributes.color;
+            const stride = 66; 
+
+            for (let i = 0; i < pAttr.count; i++) {
+                const px = pAttr.getX(i); const py = pAttr.getY(i);
+                const gx = Math.floor((px / TANK_SIZE + 0.5) * 63);
+                const gy = Math.floor((py / TANK_SIZE + 0.5) * 63);
+                const v = rData[(gy + 1) * stride + (gx + 1)];
+                const win = Math.min(1.0, Math.min(gx, gy, 63-gx, 63-gy) / 4.0);
+                
+                // 3D Deformation with Strict 5px/0.5u Limit
+                let h = isNaN(v) ? 0 : (v - 1.0) * 15.0 * win; 
+                h = Math.max(-H_LIMIT, Math.min(H_LIMIT, h));
+                pAttr.setZ(i, h);
+                
+                // Color Mapping: Peak White
+                if (h > H_LIMIT * 0.8) {
+                    cAttr.setXYZ(i, 1.0, 1.0, 1.0); // Pure White Peak
+                } else if (h < -0.1) {
+                    cAttr.setXYZ(i, 0.05, 0.15, 0.4); // Deep Blue Trough
+                } else {
+                    cAttr.setXYZ(i, 0.2, 0.65, 0.95); // Azure Base
+                }
+            }
+            pAttr.needsUpdate = true; cAttr.needsUpdate = true; this.surfaceGeo.computeVertexNormals();
+
+            // AI
             if (this.currentTargetIndex === -1 || Math.random() < 0.005) {
                 let mD = 1000;
                 this.preyList.forEach((p, idx) => {
@@ -128,10 +186,10 @@ class LifeNebula {
             }
             if (this.currentTargetIndex !== -1) {
                 const target = this.preyList[this.currentTargetIndex];
-                const delta = target.position.clone().sub(this.shark.position).normalize();
-                this.sharkVel.lerp(delta.multiplyScalar(0.2), 0.06);
+                this.sharkVel.lerp(target.position.clone().sub(this.shark.position).normalize().multiplyScalar(0.2), 0.06);
             }
-        } catch (e) { console.warn("Nebula AI Active Passive"); }
+        } catch (e) { console.error("Nebula V41 Error:", e); }
+        finally { this.isUpdating = false; }
     }
 
     private animate = async () => {
@@ -141,7 +199,7 @@ class LifeNebula {
         
         this.shark.position.add(this.sharkVel);
         if (this.sharkVel.lengthSq() > 0.001) this.shark.lookAt(this.shark.position.clone().add(this.sharkVel));
-        this.shark.position.clamp(new THREE.Vector3(-b, -b, -b), new THREE.Vector3(b, 10, b));
+        this.shark.position.clamp(new THREE.Vector3(-b, -b, -b), new THREE.Vector3(b, SURFACE_Y, b));
 
         this.preyList.forEach((p, i) => {
             const v = this.preyVels[i];
@@ -156,7 +214,6 @@ class LifeNebula {
 
         this.renderer.render(this.scene, this.camera);
         this.controls.update();
-        
         const ms = performance.now() - start;
         const hud = document.getElementById('val-frametime');
         if (hud) hud.innerHTML = `${ms.toFixed(1)}ms`;
