@@ -3,13 +3,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { HypercubeNeoFactory } from '../../../core/HypercubeNeoFactory';
 
 /**
- * LIFE NEBULA V41.0 - THE CLAMPED WHITE-CAP MASTERPIECE
- * Goal: 3D Deforming Surface. Max 5px (0.5 units) Height. White Peak Colors.
+ * LIFE NEBULA V43.0 - THE PRECISION POLISH
+ * Goal: Perfectly aligned ripples. Working HUD. Visual Eat Feedback.
  */
 const NX = 64; const NY = 64;
 const TANK_SIZE = 20;
 const SURFACE_Y = 10;
-const H_LIMIT = 0.5; // "5 pixels" relative limit
+const H_LIMIT = 0.5;
 
 class LifeNebula {
     private scene!: THREE.Scene;
@@ -19,6 +19,7 @@ class LifeNebula {
     
     private engine: any = null;
     private shark!: THREE.Group;
+    private sharkMat!: THREE.MeshPhysicalMaterial;
     private preyCount = 65;
     private preyList: THREE.Group[] = [];
     private preyVels: THREE.Vector3[] = [];
@@ -26,8 +27,8 @@ class LifeNebula {
     private sharkVel = new THREE.Vector3(0, 0, 0);
     private currentTargetIndex = -1;
     private splashCooldown = 0;
+    private eatFlashCounter = 0;
     
-    private surfaceMesh!: THREE.Mesh;
     private surfaceGeo!: THREE.PlaneGeometry;
 
     constructor() {
@@ -58,40 +59,35 @@ class LifeNebula {
     }
 
     private setupModels() {
-        // Enclosure Frame
-        const frame = new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE);
-        const edges = new THREE.EdgesGeometry(frame);
-        this.scene.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: 0.3 })));
-
-        // Deep Water Block
-        const dGeo = new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE);
-        const dMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0x0ea5e9, transparent: true, opacity: 0.35, transmission: 0.95,
+        // 1. Full Deep Volume
+        const cubeGeo = new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE);
+        const cubeMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0x0ea5e9, transparent: true, opacity: 0.3, transmission: 0.95,
             metalness: 0, roughness: 0.05, ior: 1.1, thickness: 2.0
         });
-        this.scene.add(new THREE.Mesh(dGeo, dMat));
+        this.scene.add(new THREE.Mesh(cubeGeo, cubeMat));
 
-        // Clamped Reactive Surface
+        // 2. Reactive Surface
         this.surfaceGeo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, NX - 1, NY - 1);
         const colorAttr = new THREE.BufferAttribute(new Float32Array(this.surfaceGeo.attributes.position.count * 3), 3);
         this.surfaceGeo.setAttribute('color', colorAttr);
         const sMat = new THREE.MeshPhysicalMaterial({ 
             color: 0x0ea5e9, transparent: true, opacity: 0.8, transmission: 0.7,
-            metalness: 0.1, roughness: 0.02, clearcoat: 1.0, 
-            vertexColors: true, ior: 1.33, side: THREE.DoubleSide
+            vertexColors: true, metalness: 0.1, roughness: 0.02, clearcoat: 1.0, side: THREE.DoubleSide
         });
-        this.surfaceMesh = new THREE.Mesh(this.surfaceGeo, sMat);
-        this.surfaceMesh.rotation.x = -Math.PI / 2;
-        this.surfaceMesh.position.y = SURFACE_Y + 0.1;
-        this.scene.add(this.surfaceMesh);
+        const surfaceMesh = new THREE.Mesh(this.surfaceGeo, sMat);
+        surfaceMesh.rotation.x = -Math.PI / 2;
+        surfaceMesh.position.y = SURFACE_Y + 0.05;
+        this.scene.add(surfaceMesh);
 
-        // Shark
+        // 3. Shark (Hunting Machine)
         this.shark = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.4, 4, 16), new THREE.MeshPhysicalMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.1, clearcoat: 1.0 }));
+        this.sharkMat = new THREE.MeshPhysicalMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.1, clearcoat: 1.0 });
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.4, 4, 16), this.sharkMat);
         body.rotation.x = Math.PI / 2;
         this.shark.add(body); this.scene.add(this.shark);
 
-        // Prey
+        // 4. Prey
         const colors = [0xf43f5e, 0x38bdf8, 0x10b981];
         for (let i = 0; i < this.preyCount; i++) {
             const mat = new THREE.MeshStandardMaterial({ color: colors[i%3], emissive: colors[i%3], emissiveIntensity: 2.5 });
@@ -113,9 +109,11 @@ class LifeNebula {
     }
 
     private worldToGrid(v: THREE.Vector3) {
+        // Map world [-10, 10] to grid [0, 63]
+        // INVERT Y (Z) to match Plane Geometry orientation
         return {
-            gx: (v.x / TANK_SIZE + 0.5) * 64,
-            gy: (v.z / TANK_SIZE + 0.5) * 64
+            x: Math.floor((v.x / TANK_SIZE + 0.5) * 63),
+            y: Math.floor((1.0 - (v.z / TANK_SIZE + 0.5)) * 63)
         };
     }
 
@@ -126,17 +124,18 @@ class LifeNebula {
         try {
             const bridge = this.engine.bridge;
             const chunk = this.engine.vGrid.chunks[0];
-            const pos = this.worldToGrid(this.shark.position);
+            const gPos = this.worldToGrid(this.shark.position);
             const config = (this.engine as any).vGrid.config;
             if (!config.objects) config.objects = [];
             
-            // Interaction
-            const dist = Math.abs(this.shark.position.y - SURFACE_Y);
-            if (dist < 1.0 && this.splashCooldown-- <= 0) {
+            // 1. WAVE TRIGGER (Corrected Alignment)
+            const distSurf = Math.abs(this.shark.position.y - SURFACE_Y);
+            if (distSurf < 1.0 && this.splashCooldown-- <= 0) {
                 config.objects.push({
                     id: 'impact', type: 'circle',
-                    position: { x: pos.gx - 6, y: pos.gy - 6 }, dimensions: { w: 12, h: 12 },
-                    properties: { rho: 1.45 }, rasterMode: "replace" 
+                    position: { x: gPos.x - 7, y: gPos.y - 7 }, 
+                    dimensions: { w: 14, h: 14 },
+                    properties: { rho: 1.5 }, rasterMode: "replace" 
                 });
                 this.splashCooldown = 15;
             }
@@ -154,29 +153,23 @@ class LifeNebula {
             const stride = 66; 
 
             for (let i = 0; i < pAttr.count; i++) {
-                const px = pAttr.getX(i); const py = pAttr.getY(i);
+                const px = pAttr.getX(i); const pz = pAttr.getY(i);
                 const gx = Math.floor((px / TANK_SIZE + 0.5) * 63);
-                const gy = Math.floor((py / TANK_SIZE + 0.5) * 63);
+                const gy = Math.floor((1.0 - (pz / TANK_SIZE + 0.5)) * 63); // MATCH INVERSION
                 const v = rData[(gy + 1) * stride + (gx + 1)];
                 const win = Math.min(1.0, Math.min(gx, gy, 63-gx, 63-gy) / 4.0);
                 
-                // 3D Deformation with Strict 5px/0.5u Limit
                 let h = isNaN(v) ? 0 : (v - 1.0) * 15.0 * win; 
                 h = Math.max(-H_LIMIT, Math.min(H_LIMIT, h));
                 pAttr.setZ(i, h);
                 
-                // Color Mapping: Peak White
-                if (h > H_LIMIT * 0.8) {
-                    cAttr.setXYZ(i, 1.0, 1.0, 1.0); // Pure White Peak
-                } else if (h < -0.1) {
-                    cAttr.setXYZ(i, 0.05, 0.15, 0.4); // Deep Blue Trough
-                } else {
-                    cAttr.setXYZ(i, 0.2, 0.65, 0.95); // Azure Base
-                }
+                if (h > H_LIMIT * 0.8) cAttr.setXYZ(i, 1.0, 1.0, 1.0);
+                else if (h < -0.05) cAttr.setXYZ(i, 0.05, 0.2, 0.45);
+                else cAttr.setXYZ(i, 0.2, 0.6, 0.95);
             }
             pAttr.needsUpdate = true; cAttr.needsUpdate = true; this.surfaceGeo.computeVertexNormals();
 
-            // AI
+            // 2. HUNTING LOGIC (With Eating Flash)
             if (this.currentTargetIndex === -1 || Math.random() < 0.005) {
                 let mD = 1000;
                 this.preyList.forEach((p, idx) => {
@@ -186,9 +179,27 @@ class LifeNebula {
             }
             if (this.currentTargetIndex !== -1) {
                 const target = this.preyList[this.currentTargetIndex];
-                this.sharkVel.lerp(target.position.clone().sub(this.shark.position).normalize().multiplyScalar(0.2), 0.06);
+                const delta = target.position.clone().sub(this.shark.position);
+                const dist = delta.length();
+                if (dist < 1.3) {
+                    target.position.set((Math.random()-0.5)*18, (Math.random()-0.5)*18, (Math.random()-0.5)*18);
+                    this.currentTargetIndex = -1; 
+                    this.eatFlashCounter = 12; // Start Flash
+                } else {
+                    this.sharkVel.lerp(delta.normalize().multiplyScalar(0.24), 0.07);
+                }
             }
-        } catch (e) { console.error("Nebula V41 Error:", e); }
+            
+            // Visual Flash Logic
+            if (this.eatFlashCounter > 0) {
+                this.sharkMat.emissive.setHex(0xf43f5e);
+                this.sharkMat.emissiveIntensity = this.eatFlashCounter / 6.0;
+                this.eatFlashCounter--;
+            } else {
+                this.sharkMat.emissiveIntensity = 0;
+            }
+
+        } catch (e) { console.error("Nebula V43 Error:", e); }
         finally { this.isUpdating = false; }
     }
 
@@ -207,15 +218,16 @@ class LifeNebula {
             const pos = p.position;
             if (Math.abs(pos.x) > b || Math.abs(pos.y) > b || Math.abs(pos.z) > b) v.add(pos.clone().multiplyScalar(-0.25));
             const dS = p.position.distanceTo(this.shark.position);
-            if (dS < 4.5) v.lerp(p.position.clone().sub(this.shark.position).normalize().multiplyScalar(0.3), 0.2);
+            if (dS < 4.5) v.lerp(p.position.clone().sub(this.shark.position).normalize().multiplyScalar(0.35), 0.22);
             v.clampLength(0.04, 0.22); p.position.add(v);
             if (v.lengthSq() > 0.001) p.lookAt(p.position.clone().add(v));
         });
 
         this.renderer.render(this.scene, this.camera);
         this.controls.update();
+        
         const ms = performance.now() - start;
-        const hud = document.getElementById('val-frametime');
+        const hud = document.getElementById('stat-fps'); // CORRECTED ID
         if (hud) hud.innerHTML = `${ms.toFixed(1)}ms`;
         requestAnimationFrame(this.animate);
     }
