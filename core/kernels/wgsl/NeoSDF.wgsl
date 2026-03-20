@@ -31,7 +31,7 @@ struct Params {
     bottomRole: u32,    // 27
     frontRole: u32,     // 28
     backRole: u32,      // 29
-    baseY: u32,         // 30
+    baseY: u32,         // Slot 30
     _pad31: u32,        // 31
     objects: array<GpuObject, 8> 
 };

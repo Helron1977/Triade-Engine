@@ -145,6 +145,10 @@ export class HypercubeNeoFactory implements IFactory {
             }
         }
 
+        if (!descriptor.rules || descriptor.rules.length === 0) {
+            throw new Error("Validation Error: Engine must define at least one compute rule (rules[]).");
+        }
+
         if (!descriptor.faces || descriptor.faces.length === 0) {
             throw new Error("Validation Error: Engine must define at least one data face.");
         }

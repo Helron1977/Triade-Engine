@@ -1,9 +1,13 @@
 {
     "engine": {
-        "type": "neo-path-v1",
-        "params": {
-            "maxDistance": 1000
-        },
+        "rules": [
+            {
+                "type": "neo-path-v1",
+                "params": {
+                    "maxDistance": 1000
+                }
+            }
+        ],
         "faces": [
             {
                 "name": "distance",
@@ -27,7 +31,8 @@
         "chunks": {
             "x": 1,
             "y": 1
-        }
+        },
+        "boundaries": {}
     },
     "visualProfile": {
         "colormap": "inferno",

@@ -23,16 +23,16 @@ struct Params {
     bioWriteIdx: u32,
     fBase: u32,
     // Slots 22+: Extensions (Total 10 slots before objects at 32)
-    bioDiffusion: f32,
-    bioGrowth: f32,
-    _pad24: u32,
-    _pad25: u32,
-    _pad26: u32,
-    _pad27: u32,
-    _pad28: u32,
-    _pad29: u32,
-    _pad11: u32,
-    _pad12: u32,
+    bioDiffusion: f32,  // Slot 22
+    bioGrowth: f32,      // Slot 23
+    leftRole: u32,       // Slot 24 (Protected Topology Block)
+    rightRole: u32,      // 25
+    topRole: u32,        // 26
+    bottomRole: u32,     // 27
+    frontRole: u32,      // 28
+    backRole: u32,       // 29
+    _pad30: u32,         // 30
+    _pad31: u32,         // 31
     objects: array<GpuObject, 8> 
 };
 

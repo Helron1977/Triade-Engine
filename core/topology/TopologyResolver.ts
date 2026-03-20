@@ -65,7 +65,8 @@ export class TopologyResolver {
                 }
             } else {
                 // Fallback to global boundaries if no joint descriptor found for this face
-                const boundarySide = globalBoundaries[face] || globalBoundaries.all || { role: 'wall' };
+                const bounds = globalBoundaries || {};
+                const boundarySide = (bounds as any)[face] || (bounds as any).all || { role: 'wall' };
                 role = this.mapRoleToID(boundarySide.role);
             }
 

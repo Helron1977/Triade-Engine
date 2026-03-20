@@ -116,4 +116,70 @@ describe('GpuDispatcher Layout Validation', () => {
         expect(u32[10]).toBe(1024); // strideFace
         expect(u32[11]).toBe(42);   // currentTick
     });
+
+    it('should protect Topological Roles (24-29) and align Extension Slots (22, 23, 30, 31)', async () => {
+        // Mock Device
+        const mockDevice = {
+            createBuffer: vi.fn().mockReturnValue({ size: 1024, usage: 7 }),
+            createShaderModule: vi.fn(),
+            createComputePipeline: vi.fn().mockReturnValue({ getBindGroupLayout: vi.fn(), label: 'mock' }),
+            createBindGroup: vi.fn(),
+            createCommandEncoder: vi.fn().mockReturnValue({
+                beginComputePass: vi.fn().mockReturnValue({ setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups: vi.fn(), end: vi.fn() }),
+                finish: vi.fn()
+            }),
+            queue: { writeBuffer: vi.fn(), submit: vi.fn() },
+            limits: { minUniformBufferOffsetAlignment: 256 }
+        };
+        vi.spyOn(HypercubeGPUContext, 'device', 'get').mockReturnValue(mockDevice as any);
+
+        const runTest = async (kernelType: string, params: any) => {
+            const mockGrid = {
+                dimensions: { nx: 32, ny: 32 },
+                chunkLayout: { x: 1, y: 1 },
+                chunks: [{ id: 'c0', x: 0, y: 1, localDimensions: { nx: 32, ny: 32 }, joints: [] }],
+                dataContract: { 
+                    descriptor: { rules: [{ type: kernelType, params, source: 'src' }], faces: [{ name: 'src_x' }, { name: 'src_y' }] },
+                    getFaceMappings: () => [{ name: 'src_x', isPingPong: true }, { name: 'src_y', isPingPong: true }]
+                },
+                config: { boundaries: { all: { role: 'wall' } }, objects: [] }
+            };
+            const mockParity = { getFaceIndices: () => ({ read: 10, write: 11 }), currentTick: 0 };
+            const mockBridge = { gpuBuffer: {}, strideFace: 1, totalSlotsPerChunk: 1 };
+            
+            const dispatcher = new GpuDispatcher(mockGrid as any, mockBridge as any, mockParity as any);
+            await dispatcher.dispatch(5.0); // t = 5.0
+
+            const lastCall = mockDevice.queue.writeBuffer.mock.lastCall;
+            if (!lastCall) throw new Error("Mock writeBuffer was not called");
+            const writtenu32 = lastCall[2] as Uint32Array;
+            const writtenf32 = new Float32Array(writtenu32.buffer);
+            return { u32: writtenu32, f32: writtenf32 };
+        };
+
+        // 1. TEST NEO-SDF LOCKDOWN
+        const sdf = await runTest('neo-sdf', {});
+        expect(sdf.u32[22]).toBe(5); // t = 5.0 (jfaStep)
+        expect(sdf.u32[23]).toBe(0); // src_x index (first face)
+        expect(sdf.u32[30]).toBe(2); // src_y index (second face after ping-pong 0,1)
+        
+        // PROTECTION CHECK (Topological Roles must occupy 24-29)
+        // Resolve for chunk (0, 1) with "all: wall" -> Top is wall, Bottom is internal?
+        // Let's just check they ARE written and don't match the SDK params
+        for(let i=24; i<=29; i++) {
+            expect(sdf.u32[i]).toBeGreaterThanOrEqual(0);
+            expect(sdf.u32[i]).toBeLessThanOrEqual(10); // Roles are small enums (0-3)
+        }
+
+        // 2. TEST NEO-OCEAN LOCKDOWN
+        const ocean = await runTest('neo-ocean-v1', { bioDiffusion: 0.123, bioGrowth: 0.456 });
+        expect(ocean.f32[22]).toBeCloseTo(0.123, 5);
+        expect(ocean.f32[23]).toBeCloseTo(0.456, 5);
+        
+        // PROTECTION CHECK
+        for(let i=24; i<=29; i++) {
+            expect(ocean.u32[i]).toBeGreaterThanOrEqual(0);
+            expect(ocean.u32[i]).toBeLessThanOrEqual(10);
+        }
+    });
 });

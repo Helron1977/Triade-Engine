@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Life Nebula XL - 4x Resolution / 8x Volume</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #01040a;
+            --panel: rgba(10, 15, 30, 0.75);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.4);
+            --danger: #f43f5e;
+            --text: #f8fafc;
+            --text-dim: #64748b;
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background: var(--bg); color: var(--text);
+            font-family: 'Outfit', sans-serif; overflow: hidden;
+        }
+
+        #canvas-container { position: absolute; inset: 0; z-index: 1; }
+
+        .overlay {
+            position: absolute; inset: 0; pointer-events: none; z-index: 10;
+            display: flex; flex-direction: column; justify-content: space-between;
+            padding: 25px; box-sizing: border-box;
+        }
+
+        .glass-panel {
+            background: var(--panel); backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px;
+            padding: 18px; pointer-events: auto;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+        }
+
+        header { display: flex; justify-content: space-between; align-items: center; }
+
+        .brand h1 {
+            margin: 0; font-family: 'Orbitron', sans-serif; font-size: 1.4rem;
+            letter-spacing: 3px; color: var(--accent); text-transform: uppercase;
+        }
+
+        .xl-badge {
+            background: var(--accent); color: #000; font-size: 0.6rem;
+            font-weight: 800; padding: 2px 6px; border-radius: 4px;
+            vertical-align: middle; margin-left: 8px;
+        }
+
+        .brand p { margin: 4px 0 0; font-size: 0.75rem; color: var(--text-dim); }
+
+        .stats-hud { text-align: right; font-family: 'Orbitron', sans-serif; font-size: 0.65rem; }
+        .stat-val { color: var(--accent); font-weight: 700; }
+
+        .control-panel { width: 300px; }
+        h2 { font-size: 0.85rem; margin: 0 0 12px; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+
+        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; margin-top: 5px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot-predator { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+        .dot-prey { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+        #loader {
+            position: fixed; inset: 0; background: var(--bg); z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+
+        .spinner {
+            width: 40px; height: 40px; border: 2px solid rgba(56, 189, 248, 0.1);
+            border-top: 2px solid var(--accent); border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .loading-text { margin-top: 15px; font-family: 'Orbitron', sans-serif; font-size: 0.7rem; color: var(--accent); letter-spacing: 2px; }
+    </style>
+</head>
+<body>
+    <div id="loader">
+        <div class="spinner"></div>
+        <div class="loading-text">Spawning XL Nebula...</div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div class="overlay">
+        <header>
+            <div class="brand glass-panel">
+                <h1>Life Nebula <span class="xl-badge">XL V77.0</span></h1>
+                <p>128x128 Multi-Scale Neural Ocean</p>
+            </div>
+            <div class="stats-hud glass-panel">
+                <div>RESOLUTION: <span class="stat-val">128x128x1</span></div>
+                <div>DOMAIN: <span class="stat-val">8x VOLUME</span></div>
+                <div>KERNELS: <span class="stat-val">LBM + SDF + TENSOR</span></div>
+            </div>
+            <div class="stats-hud glass-panel" style="border-right: 4px solid var(--danger);">
+                <div style="font-size: 0.55rem; color: var(--text-dim);">PREDATION ANALYTICS</div>
+                <div style="display: flex; gap: 15px; margin: 5px 0;">
+                    <div><span style="font-size: 0.6rem; opacity: 0.7;">VECTOR:</span> <span id="v-catches" class="stat-val" style="color: #fff;">0</span></div>
+                    <div><span style="font-size: 0.6rem; opacity: 0.7;">TENSOR:</span> <span id="t-catches" class="stat-val" style="color: var(--accent);">0</span></div>
+                </div>
+                <div style="font-size: 0.6rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">ACTIVE BRAIN: <span id="ai-status" class="stat-val" style="color: #60a5fa; font-size: 0.65rem;">SEARCHING...</span></div>
+            </div>
+        </header>
+
+        <div class="control-panel glass-panel">
+            <h2>Environment Data</h2>
+            <div class="legend-item"><div class="dot dot-predator"></div> <span>Great White (3D Bone-Rigged)</span></div>
+            <div class="legend-item"><div class="dot dot-prey"></div> <span>Randomized Organic Clusters</span></div>
+            <div style="margin-top: 15px; font-size: 0.7rem; color: var(--text-dim); line-height: 1.4;">
+                Procedural obstacles are regenerated on each reload. Pathfinder gradients are dynamically updated in real-time.
+            </div>
+        </div>
+
+        <footer style="display:flex; justify-content:center;">
+            <div class="glass-panel" style="font-size: 0.6rem; color: var(--text-dim); padding: 8px 15px;">
+                Hypercube Neo 4.0 &bull; High-Performance GPU Simulation
+            </div>
+        </footer>
+    </div>
+
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.156.1/build/three.module.js",
+            "three/examples/jsm/": "https://unpkg.com/three@0.156.1/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="./nebula-xl.ts"></script>
+</body>
+</html>

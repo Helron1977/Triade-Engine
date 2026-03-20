@@ -1,0 +1,56 @@
+{
+    "name": "Life Nebula XL - 128x128 Masterpiece",
+    "version": "1.0.1",
+    "engine": {
+        "name": "Nebula-LBM-XL",
+        "version": "1.0.1",
+        "faces": [
+            { "name": "f0", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f1", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f2", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f3", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f4", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f5", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f6", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f7", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "f8", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "obstacles", "type": "mask", "isSynchronized": true, "isReadOnly": true },
+            { "name": "vx", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "vy", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "rho", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "biology", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "sdf_predator_x", "type": "scalar", "isSynchronized": true, "isPingPong": false },
+            { "name": "sdf_predator_y", "type": "scalar", "isSynchronized": true, "isPingPong": false },
+            { "name": "strategy_heatmap", "type": "scalar", "isSynchronized": true, "isPingPong": false }
+        ],
+        "rules": [
+            {
+                "type": "neo-ocean-v1",
+                "method": "OceanPhysics",
+                "source": "f0",
+                "params": {
+                    "tau_0": 0.8,
+                    "cflLimit": 0.38,
+                    "bioDiffusion": 0.05,
+                    "bioGrowth": 0.0005
+                }
+            },
+            {
+                "type": "neo-sdf",
+                "source": "obstacles",
+                "target": "sdf_predator"
+            }
+        ],
+        "requirements": {
+            "ghostCells": 1,
+            "pingPong": true
+        }
+    },
+    "config": {
+        "dimensions": { "nx": 256, "ny": 256, "nz": 1 },
+        "chunks": { "x": 1, "y": 1 },
+        "boundaries": { "all": { "role": "wall" } },
+        "mode": "gpu",
+        "objects": []
+    }
+}
