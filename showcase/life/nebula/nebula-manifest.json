@@ -18,7 +18,7 @@
             { "name": "obstacles", "type": "mask", "isSynchronized": true, "isReadOnly": true },
             { "name": "vx", "type": "scalar", "isSynchronized": true, "isPingPong": true },
             { "name": "vy", "type": "scalar", "isSynchronized": true, "isPingPong": true },
-            { "name": "water_h", "type": "scalar", "isSynchronized": true, "isPingPong": true },
+            { "name": "rho", "type": "scalar", "isSynchronized": true, "isPingPong": true },
             { "name": "biology", "type": "scalar", "isSynchronized": true, "isPingPong": true },
             { "name": "sdf_predator_x", "type": "scalar", "isSynchronized": true, "isPingPong": false },
             { "name": "sdf_predator_y", "type": "scalar", "isSynchronized": true, "isPingPong": false },
