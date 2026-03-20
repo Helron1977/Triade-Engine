@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { HypercubeNeoFactory } from '../../../core/HypercubeNeoFactory';
 
 /**
- * LIFE NEBULA V46.0 - THE PERFECT ALIGNMENT
- * Goal: Axis-Aligned Ripples. Dynamic Panel Culling. Transparent Clarity.
+ * LIFE NEBULA V47.0 - CRYSTAL PRECISION
+ * Goal: Axis-Aligned Ripples. Total Side Transparency. Bubbles Visibility.
  */
 const NX = 64; const NY = 64;
 const TANK_SIZE = 20;
@@ -64,16 +64,16 @@ class LifeNebula {
     }
 
     private setupModels() {
-        // 1. Crystal Water Volume (Faint)
-        const cubeMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0x0ea5e9, transparent: true, opacity: 0.15, transmission: 0.99,
-            metalness: 0, roughness: 0.01, ior: 1.1, thickness: 1.0
+        // 1. Crystal Water Volume (Ultra-Translucent)
+        const volumeMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0x0ea5e9, transparent: true, opacity: 0.05, transmission: 0.99,
+            metalness: 0, roughness: 0, ior: 1.05, thickness: 0.5
         });
-        this.scene.add(new THREE.Mesh(new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE), cubeMat));
+        this.scene.add(new THREE.Mesh(new THREE.BoxGeometry(TANK_SIZE, TANK_SIZE, TANK_SIZE), volumeMat));
 
-        // 2. Dynamic Side Panels (Walls)
+        // 2. Dynamic Adaptive Panels
         const wallMat = new THREE.MeshStandardMaterial({ 
-            color: 0x082f49, transparent: true, opacity: 0.25, side: THREE.DoubleSide 
+            color: 0x082f49, transparent: true, opacity: 0.2, side: THREE.DoubleSide 
         });
         
         const createWall = (nx: number, ny: number, nz: number, px: number, py: number, pz: number, rotX = 0, rotY = 0) => {
@@ -103,17 +103,20 @@ class LifeNebula {
         surfaceMesh.position.y = SURFACE_Y + 0.05;
         this.scene.add(surfaceMesh);
 
-        // 4. Bubbles
+        // 4. Bubbles (Enhanced Visibility)
         this.bubbleGeos = new THREE.BufferGeometry();
-        const count = 200;
+        const count = 250;
         const pos = new Float32Array(count * 3);
+        const bColors = new Float32Array(count * 3);
         for(let i=0; i<count; i++) {
             pos[i*3] = (Math.random()-0.5)*19;
             pos[i*3+1] = (Math.random()-0.5)*19;
             pos[i*3+2] = (Math.random()-0.5)*19;
+            bColors[i*3]=0.8; bColors[i*3+1]=1.0; bColors[i*3+2]=1.0;
         }
         this.bubbleGeos.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        this.bubbles = new THREE.Points(this.bubbleGeos, new THREE.PointsMaterial({ color: 0xffffff, size: 0.08, transparent: true, opacity: 0.6 }));
+        this.bubbleGeos.setAttribute('color', new THREE.BufferAttribute(bColors, 3));
+        this.bubbles = new THREE.Points(this.bubbleGeos, new THREE.PointsMaterial({ size: 0.1, vertexColors: true, transparent: true, opacity: 0.8 }));
         this.scene.add(this.bubbles);
 
         // 5. Entities
@@ -144,10 +147,11 @@ class LifeNebula {
     }
 
     private worldToGrid(v: THREE.Vector3) {
-        // AXIAL SYMMETRY FIX (Invert both axis as requested by user's mirror observation)
+        // BASELINE ALIGNMENT - BACK TO BASICS
+        // No inversions. Let's find the true mirror axis from here.
         return {
-            x: Math.floor((1.0 - (v.x / TANK_SIZE + 0.5)) * 63),
-            y: Math.floor((1.0 - (v.z / TANK_SIZE + 0.5)) * 63)
+            x: Math.floor((v.x / TANK_SIZE + 0.5) * 63),
+            z: Math.floor((v.z / TANK_SIZE + 0.5) * 63)
         };
     }
 
@@ -162,14 +166,14 @@ class LifeNebula {
             const config = (this.engine as any).vGrid.config;
             if (!config.objects) config.objects = [];
             
-            // Interaction
-            const dSurf = Math.abs(this.shark.position.y - SURFACE_Y);
-            if (dSurf < 1.0 && this.splashCooldown-- <= 0) {
+            // Interaction: Soft Density Pulse (No Plateau)
+            const dS = Math.abs(this.shark.position.y - SURFACE_Y);
+            if (dS < 1.0 && this.splashCooldown-- <= 0) {
                 config.objects.push({
                     id: 'impact', type: 'circle',
-                    position: { x: gPos.x - 7, y: gPos.y - 7 },
-                    dimensions: { w: 14, h: 14 },
-                    properties: { rho: 1.55 }, rasterMode: "replace" 
+                    position: { x: gPos.x - 4, y: gPos.z - 4 },
+                    dimensions: { w: 8, h: 8 },
+                    properties: { rho: 1.25 }, rasterMode: "add" 
                 });
                 this.splashCooldown = 15;
             }
@@ -187,9 +191,9 @@ class LifeNebula {
 
             for (let i = 0; i < pAttr.count; i++) {
                 const px = pAttr.getX(i); const pz = pAttr.getY(i);
-                // DISPLAY MAP MUST ALSO MATCH INVERSION TO ALIGN
-                const gx = Math.floor((1.0 - (px / TANK_SIZE + 0.5)) * 63);
-                const gy = Math.floor((1.0 - (pz / TANK_SIZE + 0.5)) * 63);
+                // BASELINE DISPLAY ALIGNMENT
+                const gx = Math.floor((px / TANK_SIZE + 0.5) * 63);
+                const gy = Math.floor((pz / TANK_SIZE + 0.5) * 63);
                 const v = rData[(gy + 1) * stride + (gx + 1)];
                 const win = Math.min(1.0, Math.min(gx, gy, 63-gx, 63-gy) / 4.0);
                 
@@ -199,20 +203,20 @@ class LifeNebula {
                 
                 if (h > H_LIMIT * 0.8) cAttr.setXYZ(i, 1, 1, 1);
                 else if (h < -0.05) cAttr.setXYZ(i, 0.05, 0.25, 0.5);
-                else cAttr.setXYZ(i, 0.2, 0.65, 0.95);
+                else cAttr.setXYZ(i, 0.2, 0.6, 0.95);
             }
             pAttr.needsUpdate = true; cAttr.needsUpdate = true; this.surfaceGeo.computeVertexNormals();
 
             // Bubbles Move
-            const bPos = this.bubbleGeos.attributes.position.array as Float32Array;
-            for(let i=0; i<bPos.length/3; i++){
-                bPos[i*3+1] += 0.05;
-                if(bPos[i*3+1] > 10) bPos[i*3+1] = -10;
+            const bP = this.bubbleGeos.attributes.position.array as Float32Array;
+            for(let i=0; i<bP.length/3; i++){
+                bP[i*3+1] += 0.05;
+                if(bP[i*3+1] > 10) bP[i*3+1] = -10;
             }
             this.bubbleGeos.attributes.position.needsUpdate = true;
 
-            // Hunting Logic
-            if (this.currentTargetIndex === -1 || Math.random() < 0.005) {
+            // Hunting feedback
+            if (this.currentTargetIndex === -1 || Math.random() < 0.01) {
                 let mD = 1000;
                 this.preyList.forEach((p, idx) => {
                     const d = p.position.distanceTo(this.shark.position);
@@ -235,7 +239,7 @@ class LifeNebula {
                 this.eatFlashCounter--;
             } else { this.sharkMat.emissiveIntensity = 0; }
 
-        } catch (e) { console.error("Nebula V46 Error:", e); }
+        } catch (e) { console.error("Nebula V47 Error:", e); }
         finally { this.isUpdating = false; }
     }
 
@@ -255,12 +259,10 @@ class LifeNebula {
             if (v.lengthSq() > 0.001) p.lookAt(p.position.clone().add(v));
         });
 
-        // 6. Dynamic Culling of Panels
+        // Crystal Side Culling
         const camPos = this.camera.position.clone().normalize();
         this.sidePanels.forEach(p => {
-            // If dot product of camera dir and plane normal is > 0, the plane is facing "with" the camera (Far Wall)
-            const dot = p.normal.dot(camPos);
-            p.mesh.visible = (dot > 0); 
+            p.mesh.visible = (p.normal.dot(camPos) > 0); 
         });
 
         this.renderer.render(this.scene, this.camera);
