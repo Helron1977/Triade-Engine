@@ -1,10 +1,10 @@
 {
     "$schema": "../../../manifest-schema.json",
     "name": "Life Nebula - 2.5D Masterpiece",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "engine": {
         "name": "Nebula-LBM",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "faces": [
             { "name": "f0", "type": "scalar", "isSynchronized": true, "isPingPong": true },
             { "name": "f1", "type": "scalar", "isSynchronized": true, "isPingPong": true },
@@ -22,30 +22,24 @@
             { "name": "biology", "type": "scalar", "isSynchronized": true, "isPingPong": true },
             { "name": "sdf_predator_x", "type": "scalar", "isSynchronized": true, "isPingPong": false },
             { "name": "sdf_predator_y", "type": "scalar", "isSynchronized": true, "isPingPong": false },
-            { "name": "sdf_escape_x", "type": "scalar", "isSynchronized": true, "isPingPong": false },
-            { "name": "sdf_escape_y", "type": "scalar", "isSynchronized": true, "isPingPong": false },
             { "name": "strategy_heatmap", "type": "scalar", "isSynchronized": true, "isPingPong": false }
         ],
         "rules": [
             {
                 "type": "neo-ocean-v1",
-                "method": "BGK",
+                "method": "OceanPhysics",
                 "source": "f0",
                 "params": {
-                    "omega": 1.1,
-                    "bioDiffusion": 0.005,
-                    "bioGrowth": 0.01
+                    "tau_0": 0.8,
+                    "cflLimit": 0.4,
+                    "bioDiffusion": 0.01,
+                    "bioGrowth": 0.001
                 }
             },
             {
                 "type": "neo-sdf",
                 "source": "obstacles",
                 "target": "sdf_predator"
-            },
-            {
-                "type": "neo-sdf",
-                "source": "obstacles",
-                "target": "sdf_escape"
             }
         ],
         "requirements": {
@@ -56,10 +50,7 @@
     "config": {
         "dimensions": { "nx": 64, "ny": 64, "nz": 1 },
         "chunks": { "x": 1, "y": 1 },
-        "boundaries": {
-            "left": { "role": "wall" }, "right": { "role": "wall" },
-            "top": { "role": "wall" }, "bottom": { "role": "wall" }
-        },
+        "boundaries": { "all": { "role": "wall" } },
         "mode": "gpu",
         "objects": []
     }
